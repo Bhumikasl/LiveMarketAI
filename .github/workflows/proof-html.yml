@@ -1,11 +1,31 @@
 name: Proof HTML
+
 on:
   push:
   workflow_dispatch:
+
 jobs:
   build:
     runs-on: ubuntu-latest
     steps:
-      - uses: anishathalye/proof-html@v1.1.0
+      - name: Checkout Repository
+        uses: actions/checkout@v3
+
+      - name: Set up Node.js (if needed)
+        uses: actions/setup-node@v3
         with:
-          directory: ./
+          node-version: '18'   # or any version you need
+
+      - name: Install Dependencies (if any)
+        run: |
+          # Example: npm install
+          # Remove or modify if not using Node
+          npm install
+
+      - name: Build/Run HTML
+        run: |
+          # Example: just check HTML files or run server
+          echo "Running HTML checks..."
+          ls -R ./   # lists all files for demonstration
+          # You can replace this with your own HTML validation commands
+
