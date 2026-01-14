@@ -1,2037 +1,1270 @@
-#!/usr/bin/env python3
-"""
-enhanced_portfolio_all_algorithms_research.py
+# Enhanced Financial Analysis Tool - With Hardcoded API Keys
+# This version includes hardcoded API keys for easier setup
+# Essential libraries for basic financial analysis
+!pip install yfinance pandas numpy matplotlib plotly requests
 
-Interactive end-to-end pipeline with 5 novel algorithms and 5 mathematical formulations:
-- Asks user for tickers & date range
-- Downloads OHLCV + fundamentals via yfinance
-- Computes indicators + original 10 algorithms + 5 NOVEL ALGORITHMS + 5 NOVEL FORMULATIONS
-- Runs CASP, LWPC, ARFS, MHRP, FMDA + NEW ALGORITHMS
-- Backtests per-stock and portfolio; computes metrics
-- Exports an Excel workbook with comprehensive analysis including novel research concepts
+# For advanced plotting (seaborn style)
+!pip install seaborn
 
-Author: Enhanced by Claude (incorporating novel quant finance research)
-"""
+# For multimodal analysis (YouTube + Audio transcription)
+!pip install google-api-python-client yt-dlp openai-whisper
 
-# Install required packages for Google Colab
-try:
-    import yfinance as yf
-except ImportError:
-    !pip install yfinance
-    import yfinance as yf
+# Alternative whisper installation if the above doesn't work
+# !pip install git+https://github.com/openai/whisper.git
 
-try:
-    import networkx as nx
-except ImportError:
-    !pip install networkx
-    import networkx as nx
+# For audio processing (whisper dependency)
+!pip install torch torchvision torchaudio
 
-try:
-    import openpyxl
-except ImportError:
-    !pip install openpyxl
-    import openpyxl
+# Optional: For better performance with audio
+!apt update &> /dev/null
+!apt install ffmpeg &> /dev/null
 
-try:
-    from statsmodels.tsa.stattools import grangercausalitytests
-    from statsmodels.tsa.ar_model import AutoReg
-except ImportError:
-    !pip install statsmodels
-    from statsmodels.tsa.stattools import grangercausalitytests
-    from statsmodels.tsa.ar_model import AutoReg
-
-try:
-    from sklearn.preprocessing import StandardScaler
-    from sklearn.ensemble import RandomForestRegressor
-except ImportError:
-    !pip install scikit-learn
-    from sklearn.preprocessing import StandardScaler
-    from sklearn.ensemble import RandomForestRegressor
-
-import warnings
-warnings.filterwarnings("ignore")
-
-from datetime import datetime, timedelta
-import sys
-import math
-import numpy as np
+# Check installations
+import yfinance as yf
 import pandas as pd
-from scipy.stats import rankdata, median_abs_deviation, entropy, wasserstein_distance
-from tqdm import tqdm
-from openpyxl.styles import Font, Alignment, PatternFill, Border, Side
-from openpyxl.utils.dataframe import dataframe_to_rows
-from openpyxl.drawing.image import Image as XLImage
+import numpy as np
 import matplotlib.pyplot as plt
-from io import BytesIO
+import plotly.graph_objects as go
+print("✓ Core libraries installed successfully")
 
-# -------------------------
-# Config / hyperparameters
-# -------------------------
-OUTPUT_PREFIX = "Enhanced_Portfolio_AllAlgorithms"
-NOVEL_ALGORITHMS_TEXT = """Enhanced Portfolio Research Tool - Novel Algorithms & Formulations
+try:
+    from googleapiclient.discovery import build
+    print("✓ Google API client available")
+except ImportError:
+    print("⚠ Google API client not available")
 
-ORIGINAL 10 ALGORITHMS:
-1. RABE (Regime-Aware Beta Evolution)
-2. AMSF (Adaptive Multi-Signal Fusion)
-3. FTCS (Fundamental-Technical Consensus Score)
-4. DPS (Dynamic Position Sizing)
-5. CASP (Cross-Asset Signal Propagation via Granger)
-6. FMDA (Fundamental Momentum Decay Adjustment)
-7. VR-MACD (Volatility-Regime MACD)
-8. LWPC (Liquidity-Weighted Portfolio Construction)
-9. ARFS (Anomaly-Resilient Fundamental Scoring)
-10. MHRP (Multi-Horizon Return Predictor)
+try:
+    import yt_dlp
+    print("✓ yt-dlp available")
+except ImportError:
+    print("⚠ yt-dlp not available")
 
-NEW 5 NOVEL ALGORITHMS:
-1. AHF-GNN: Adaptive Hierarchical Factor Graph Neural Network
-2. CAAE: Causal Alpha Attribution Engine
-3. SPRINT-RL: Streaming Portfolio Rebalancing with Transaction Cost-Aware RL
-4. MRS-KF: Multi-Resolution Regime-Switching Kalman Filter
-5. DFAM: Decentralized Federated Alpha Mining
+try:
+    import whisper
+    print("✓ Whisper available")
+except ImportError:
+    print("⚠ Whisper not available")
 
-NEW 5 MATHEMATICAL FORMULATIONS:
-1. Dynamic Information Ratio with Endogenous Risk Scaling (DIR)
-2. Non-Ergodic Alpha Decay Function
-3. Factor Orthogonalization via Wasserstein Projection
-4. Real-Time Liquidity-Adjusted Execution Cost Metric (LACM)
-5. Topological Persistence Score for Alpha Robustness
+import yfinance as yf
+import pandas as pd
+import numpy as np
+import matplotlib.pyplot as plt
+import matplotlib.dates as mdates
+import plotly.graph_objects as go
+from plotly.subplots import make_subplots
+import requests
+from io import StringIO
+from datetime import datetime, timedelta
+import warnings
+import json
+import os
+from typing import Optional, List, Dict, Any, Tuple, Union
 
-These represent cutting-edge research in quantitative finance addressing:
-- Factor Modeling
-- Risk-Adjusted Alpha
-- Scalability & Execution
-- Real-Time Data Handling
-"""
+# Optional imports for multimodal analysis (with fallback)
+try:
+    from googleapiclient.discovery import build
+    GOOGLE_API_AVAILABLE = True
+except ImportError:
+    GOOGLE_API_AVAILABLE = False
+    print("Warning: Google API client not available. YouTube functionality will be disabled.")
 
-# Algorithm / formula hyperparameters (tweakable)
-HURST_WINDOW = 100
-VOL_WINDOW = 30
-RSI_WINDOW = 14
-SMA_SHORT = 10
-SMA_LONG = 50
-MACD_FAST = 12
-MACD_SLOW = 26
-MACD_SIGNAL = 9
-FMDA_GAMMA = 0.1
-DPS_K = 1_000_000
-MHRP_SHORT_LAGS = 3
-GRANGER_MAXLAG = 5
+try:
+    import yt_dlp
+    YT_DLP_AVAILABLE = True
+except ImportError:
+    YT_DLP_AVAILABLE = False
+    print("Warning: yt-dlp not available. YouTube downloading functionality will be disabled.")
 
-# New algorithm parameters
-AHF_LOOKBACK = 50
-CAAE_IV_STRENGTH = 0.3
-SPRINT_LEARNING_RATE = 0.01
-MRS_WAVELET_LEVELS = 3
-DFAM_PRIVACY_EPSILON = 1.0
+try:
+    import whisper
+    WHISPER_AVAILABLE = True
+except ImportError:
+    WHISPER_AVAILABLE = False
+    print("Warning: Whisper not available. Audio transcription functionality will be disabled.")
 
-# -------------------------
-# Helpers
-# -------------------------
+warnings.filterwarnings('ignore')
 
-def validate_date(s: str) -> bool:
+# Configuration
+try:
+    plt.style.use('seaborn-v0_8')
+except:
     try:
-        datetime.strptime(s, "%Y-%m-%d")
+        plt.style.use('seaborn')
+    except:
+        plt.style.use('default')
+
+# =============================================================================
+# HARDCODED API KEYS - REPLACE WITH YOUR ACTUAL KEYS
+# =============================================================================
+YOUTUBE_API_KEY = "your api"
+# You can also add other API keys here if needed in the future:
+ALPHA_VANTAGE_API_KEY = "your api"
+NEWS_API_KEY = "your api"
+# =============================================================================
+
+class FinancialAnalyzer:
+    """Comprehensive Financial Analysis Tool"""
+
+    def __init__(self, symbol: str):
+        self.symbol = symbol.upper()
+        self.data = None
+        self.analysis_results = {}
+
+    def fetch_data(self, period: str = '1y', start_date: Optional[str] = None,
+                   end_date: Optional[str] = None) -> bool:
+        """Fetch stock data from Yahoo Finance with flexible date options"""
+        try:
+            print(f"Fetching data for {self.symbol}...")
+            ticker = yf.Ticker(self.symbol)
+
+            # Handle different date input methods
+            if start_date and end_date:
+                # Custom date range
+                self.data = ticker.history(start=start_date, end=end_date)
+                print(f"Using custom date range: {start_date} to {end_date}")
+            elif start_date and not end_date:
+                # From start_date to present
+                self.data = ticker.history(start=start_date)
+                print(f"Using date range: {start_date} to present")
+            else:
+                # Use period
+                self.data = ticker.history(period=period)
+                print(f"Using period: {period}")
+
+            if self.data.empty:
+                raise Exception("No data retrieved")
+
+            print(f"Retrieved {len(self.data)} days of data")
+            return True
+        except Exception as e:
+            print(f"Error fetching data: {e}")
+            return False
+
+    def calculate_technical_indicators(self) -> None:
+        """Calculate various technical indicators"""
+        if self.data is None:
+            print("No data available")
+            return
+
+        try:
+            print("Calculating technical indicators...")
+            df = self.data.copy()
+
+            # Moving Averages
+            df['SMA_10'] = df['Close'].rolling(window=10).mean()
+            df['SMA_20'] = df['Close'].rolling(window=20).mean()
+            df['SMA_50'] = df['Close'].rolling(window=50).mean()
+            df['EMA_12'] = df['Close'].ewm(span=12).mean()
+            df['EMA_26'] = df['Close'].ewm(span=26).mean()
+
+            # RSI
+            delta = df['Close'].diff()
+            gain = (delta.where(delta > 0, 0)).rolling(window=14).mean()
+            loss = (-delta.where(delta < 0, 0)).rolling(window=14).mean()
+            rs = gain / loss
+            df['RSI'] = 100 - (100 / (1 + rs))
+
+            # MACD
+            df['MACD'] = df['EMA_12'] - df['EMA_26']
+            df['MACD_Signal'] = df['MACD'].ewm(span=9).mean()
+            df['MACD_Histogram'] = df['MACD'] - df['MACD_Signal']
+
+            # Bollinger Bands
+            df['BB_Middle'] = df['Close'].rolling(window=20).mean()
+            bb_std = df['Close'].rolling(window=20).std()
+            df['BB_Upper'] = df['BB_Middle'] + (bb_std * 2)
+            df['BB_Lower'] = df['BB_Middle'] - (bb_std * 2)
+            df['BB_Width'] = df['BB_Upper'] - df['BB_Lower']
+            df['BB_Position'] = (df['Close'] - df['BB_Lower']) / df['BB_Width']
+
+            # Volatility
+            df['Returns'] = df['Close'].pct_change()
+            df['Volatility'] = df['Returns'].rolling(window=30).std() * np.sqrt(252)
+
+            # Support and Resistance (simplified)
+            df['Resistance'] = df['High'].rolling(window=20).max()
+            df['Support'] = df['Low'].rolling(window=20).min()
+
+            # Volume indicators
+            df['Volume_SMA'] = df['Volume'].rolling(window=20).mean()
+            df['Volume_Ratio'] = df['Volume'] / df['Volume_SMA']
+
+            self.data = df
+            print("Technical indicators calculated")
+
+        except Exception as e:
+            print(f"Error calculating indicators: {e}")
+
+    def generate_signals(self) -> None:
+        """Generate trading signals"""
+        if self.data is None:
+            return
+
+        try:
+            print("Generating trading signals...")
+            df = self.data.copy()
+
+            # Initialize signals
+            df['Signal'] = 0
+            df['Position'] = 0
+
+            # Moving Average Crossover
+            df['MA_Signal'] = np.where(df['SMA_10'] > df['SMA_50'], 1, -1)
+
+            # RSI Signals
+            df['RSI_Signal'] = np.where(df['RSI'] < 30, 1, np.where(df['RSI'] > 70, -1, 0))
+
+            # MACD Signals
+            df['MACD_Signal_Flag'] = np.where(df['MACD'] > df['MACD_Signal'], 1, -1)
+
+            # Bollinger Band Signals
+            df['BB_Signal'] = np.where(df['Close'] < df['BB_Lower'], 1,
+                                     np.where(df['Close'] > df['BB_Upper'], -1, 0))
+
+            # Combined Signal (simple majority voting)
+            signals = ['MA_Signal', 'RSI_Signal', 'MACD_Signal_Flag', 'BB_Signal']
+            df['Combined_Signal'] = df[signals].sum(axis=1)
+            df['Final_Signal'] = np.where(df['Combined_Signal'] >= 2, 1,
+                                        np.where(df['Combined_Signal'] <= -2, -1, 0))
+
+            self.data = df
+            print("Trading signals generated")
+
+        except Exception as e:
+            print(f"Error generating signals: {e}")
+
+    def simple_backtest(self, initial_capital: float = 10000) -> None:
+        """Simple backtesting"""
+        if self.data is None:
+            return
+
+        try:
+            print("Running backtest...")
+            df = self.data.copy()
+
+            # Initialize backtest variables
+            capital = initial_capital
+            shares = 0
+            portfolio_value = []
+            trades = []
+
+            for i in range(1, len(df)):
+                current_price = df['Close'].iloc[i]
+                signal = df['Final_Signal'].iloc[i]
+                prev_signal = df['Final_Signal'].iloc[i-1]
+
+                # Buy signal
+                if signal == 1 and prev_signal != 1 and shares == 0:
+                    shares = capital / current_price
+                    capital = 0
+                    trades.append(('BUY', df.index[i], current_price, shares))
+
+                # Sell signal
+                elif signal == -1 and prev_signal != -1 and shares > 0:
+                    capital = shares * current_price
+                    trades.append(('SELL', df.index[i], current_price, shares))
+                    shares = 0
+
+                # Calculate portfolio value
+                total_value = capital + (shares * current_price)
+                portfolio_value.append(total_value)
+
+            # Final portfolio value
+            final_price = df['Close'].iloc[-1]
+            if shares > 0:
+                capital = shares * final_price
+                shares = 0
+
+            final_value = capital + (shares * final_price)
+            total_return = (final_value - initial_capital) / initial_capital
+
+            # Calculate buy and hold return
+            buy_hold_return = (df['Close'].iloc[-1] - df['Close'].iloc[0]) / df['Close'].iloc[0]
+
+            # Store results
+            self.analysis_results['backtest'] = {
+                'initial_capital': initial_capital,
+                'final_value': final_value,
+                'total_return': total_return,
+                'buy_hold_return': buy_hold_return,
+                'excess_return': total_return - buy_hold_return,
+                'number_of_trades': len(trades),
+                'trades': trades
+            }
+
+            print(f"Backtest completed:")
+            print(f"   • Initial Capital: ${initial_capital:,.2f}")
+            print(f"   • Final Value: ${final_value:,.2f}")
+            print(f"   • Strategy Return: {total_return:.2%}")
+            print(f"   • Buy & Hold Return: {buy_hold_return:.2%}")
+            print(f"   • Excess Return: {total_return - buy_hold_return:.2%}")
+            print(f"   • Number of Trades: {len(trades)}")
+
+        except Exception as e:
+            print(f"Backtest error: {e}")
+
+    def simple_forecast(self, days: int = 30) -> Optional[pd.DataFrame]:
+        """Simple price forecast using moving averages and trend"""
+        if self.data is None:
+            return None
+
+        try:
+            print(f"Generating {days}-day forecast...")
+
+            # Calculate trend using linear regression on recent data
+            recent_data = self.data['Close'].tail(60).reset_index(drop=True)
+            x = np.arange(len(recent_data))
+            z = np.polyfit(x, recent_data, 1)
+
+            # Current moving averages
+            current_sma20 = self.data['SMA_20'].iloc[-1]
+            current_volatility = self.data['Volatility'].iloc[-1]
+
+            # Generate forecast dates
+            last_date = self.data.index[-1]
+            forecast_dates = pd.date_range(start=last_date + timedelta(days=1),
+                                         periods=days, freq='D')
+
+            # Simple forecast: trend + moving average
+            trend_slope = z[0]
+            base_price = self.data['Close'].iloc[-1]
+
+            forecast_prices = []
+            for i in range(days):
+                # Trend component
+                trend_price = base_price + (trend_slope * (i + 1))
+
+                # Add some mean reversion to moving average
+                ma_pull = (current_sma20 - trend_price) * 0.1
+
+                # Add volatility (simplified)
+                noise = np.random.normal(0, current_volatility * 0.1)
+
+                forecast_price = trend_price + ma_pull + noise
+                forecast_prices.append(max(forecast_price, 0))  # Ensure positive price
+
+            forecast_df = pd.DataFrame({
+                'Date': forecast_dates,
+                'Forecast': forecast_prices,
+                'Lower_Bound': [p * 0.9 for p in forecast_prices],
+                'Upper_Bound': [p * 1.1 for p in forecast_prices]
+            })
+
+            self.analysis_results['forecast'] = forecast_df
+            print("Forecast generated")
+            return forecast_df
+
+        except Exception as e:
+            print(f"Forecast error: {e}")
+            return None
+
+    def plot_comprehensive_analysis(self) -> None:
+        """Create comprehensive analysis plots"""
+        if self.data is None:
+            return
+
+        try:
+            print("Creating comprehensive analysis plots...")
+
+            # Create subplots
+            fig = make_subplots(
+                rows=5, cols=1,
+                shared_xaxes=True,
+                vertical_spacing=0.02,
+                subplot_titles=(
+                    f'{self.symbol} Price & Moving Averages',
+                    'RSI',
+                    'MACD',
+                    'Bollinger Bands',
+                    'Volume & Signals'
+                ),
+                row_heights=[0.3, 0.15, 0.15, 0.2, 0.2]
+            )
+
+            # 1. Price and Moving Averages
+            fig.add_trace(go.Scatter(x=self.data.index, y=self.data['Close'],
+                                   name='Close', line=dict(color='blue', width=2)), row=1, col=1)
+            fig.add_trace(go.Scatter(x=self.data.index, y=self.data['SMA_10'],
+                                   name='SMA 10', line=dict(color='orange')), row=1, col=1)
+            fig.add_trace(go.Scatter(x=self.data.index, y=self.data['SMA_50'],
+                                   name='SMA 50', line=dict(color='red')), row=1, col=1)
+
+            # 2. RSI
+            fig.add_trace(go.Scatter(x=self.data.index, y=self.data['RSI'],
+                                   name='RSI', line=dict(color='purple')), row=2, col=1)
+            fig.add_hline(y=70, line_dash="dash", line_color="red", row=2, col=1)
+            fig.add_hline(y=30, line_dash="dash", line_color="green", row=2, col=1)
+
+            # 3. MACD
+            fig.add_trace(go.Scatter(x=self.data.index, y=self.data['MACD'],
+                                   name='MACD', line=dict(color='blue')), row=3, col=1)
+            fig.add_trace(go.Scatter(x=self.data.index, y=self.data['MACD_Signal'],
+                                   name='Signal', line=dict(color='red')), row=3, col=1)
+            colors = ['red' if x < 0 else 'green' for x in self.data['MACD_Histogram']]
+            fig.add_trace(go.Bar(x=self.data.index, y=self.data['MACD_Histogram'],
+                               name='Histogram', marker_color=colors), row=3, col=1)
+
+            # 4. Bollinger Bands
+            fig.add_trace(go.Scatter(x=self.data.index, y=self.data['Close'],
+                                   name='Close', line=dict(color='blue')), row=4, col=1)
+            fig.add_trace(go.Scatter(x=self.data.index, y=self.data['BB_Upper'],
+                                   name='BB Upper', line=dict(color='gray', dash='dash')), row=4, col=1)
+            fig.add_trace(go.Scatter(x=self.data.index, y=self.data['BB_Lower'],
+                                   name='BB Lower', line=dict(color='gray', dash='dash'),
+                                   fill='tonexty', fillcolor='rgba(128,128,128,0.1)'), row=4, col=1)
+            fig.add_trace(go.Scatter(x=self.data.index, y=self.data['BB_Middle'],
+                                   name='BB Middle', line=dict(color='orange')), row=4, col=1)
+
+            # 5. Volume and Signals
+            fig.add_trace(go.Bar(x=self.data.index, y=self.data['Volume'],
+                               name='Volume', marker_color='lightblue'), row=5, col=1)
+
+            # Add buy/sell signals
+            buy_signals = self.data[self.data['Final_Signal'] == 1]
+            sell_signals = self.data[self.data['Final_Signal'] == -1]
+
+            if not buy_signals.empty:
+                fig.add_trace(go.Scatter(x=buy_signals.index, y=buy_signals['Close'],
+                                       mode='markers', name='Buy Signal',
+                                       marker=dict(color='green', size=10, symbol='triangle-up')), row=1, col=1)
+
+            if not sell_signals.empty:
+                fig.add_trace(go.Scatter(x=sell_signals.index, y=sell_signals['Close'],
+                                       mode='markers', name='Sell Signal',
+                                       marker=dict(color='red', size=10, symbol='triangle-down')), row=1, col=1)
+
+            fig.update_layout(height=1000, showlegend=True,
+                            title=f'{self.symbol} Comprehensive Technical Analysis')
+            fig.show()
+
+            print("Comprehensive analysis plot created")
+
+        except Exception as e:
+            print(f"Plotting error: {e}")
+
+    def plot_forecast(self) -> None:
+        """Plot price forecast"""
+        if 'forecast' not in self.analysis_results:
+            return
+
+        try:
+            forecast = self.analysis_results['forecast']
+
+            fig = go.Figure()
+
+            # Historical data (last 60 days)
+            recent_data = self.data.tail(60)
+            fig.add_trace(go.Scatter(x=recent_data.index, y=recent_data['Close'],
+                                   mode='lines', name='Historical Price',
+                                   line=dict(color='blue', width=2)))
+
+            # Forecast
+            fig.add_trace(go.Scatter(x=forecast['Date'], y=forecast['Forecast'],
+                                   mode='lines', name='Forecast',
+                                   line=dict(color='red', dash='dash', width=2)))
+
+            # Confidence interval
+            fig.add_trace(go.Scatter(x=forecast['Date'], y=forecast['Upper_Bound'],
+                                   mode='lines', name='Upper Bound',
+                                   line=dict(color='lightgray'), showlegend=False))
+
+            fig.add_trace(go.Scatter(x=forecast['Date'], y=forecast['Lower_Bound'],
+                                   mode='lines', name='Lower Bound', fill='tonexty',
+                                   fillcolor='rgba(255,0,0,0.1)',
+                                   line=dict(color='lightgray'), showlegend=False))
+
+            fig.update_layout(
+                title=f'{self.symbol} Price Forecast (30 Days)',
+                xaxis_title='Date',
+                yaxis_title='Price ($)',
+                height=500
+            )
+            fig.show()
+
+            print("Forecast plot created")
+
+        except Exception as e:
+            print(f"Forecast plotting error: {e}")
+
+    def export_results(self) -> None:
+        """Export analysis results to CSV"""
+        try:
+            print("Exporting results...")
+
+            # Export main data with indicators
+            self.data.to_csv(f'{self.symbol}_technical_analysis.csv')
+            print(f"Technical analysis exported to {self.symbol}_technical_analysis.csv")
+
+            # Export forecast if available
+            if 'forecast' in self.analysis_results:
+                self.analysis_results['forecast'].to_csv(f'{self.symbol}_forecast.csv', index=False)
+                print(f"Forecast exported to {self.symbol}_forecast.csv")
+
+            # Export backtest results
+            if 'backtest' in self.analysis_results:
+                backtest_summary = pd.DataFrame([self.analysis_results['backtest']])
+                backtest_summary.to_csv(f'{self.symbol}_backtest_summary.csv', index=False)
+                print(f"Backtest summary exported to {self.symbol}_backtest_summary.csv")
+
+        except Exception as e:
+            print(f"Export error: {e}")
+
+    def run_complete_analysis(self, period: str = '1y', start_date: Optional[str] = None,
+                            end_date: Optional[str] = None) -> bool:
+        """Run complete analysis pipeline with flexible date options"""
+        print(f"Starting complete analysis for {self.symbol}")
+        print("=" * 60)
+
+        # Step 1: Fetch Data
+        if not self.fetch_data(period=period, start_date=start_date, end_date=end_date):
+            return False
+
+        # Step 2: Calculate Technical Indicators
+        self.calculate_technical_indicators()
+
+        # Step 3: Generate Trading Signals
+        self.generate_signals()
+
+        # Step 4: Run Backtest
+        self.simple_backtest()
+
+        # Step 5: Generate Forecast
+        self.simple_forecast()
+
+        # Step 6: Create Visualizations
+        self.plot_comprehensive_analysis()
+        self.plot_forecast()
+
+        # Step 7: Export Results
+        self.export_results()
+
+        print("=" * 60)
+        print("Complete analysis finished!")
         return True
-    except Exception:
+
+# Multi-Stock Portfolio Analyzer
+class PortfolioAnalyzer:
+    """Simple Portfolio Analysis"""
+
+    def __init__(self, symbols: List[str]):
+        self.symbols = [s.upper() for s in symbols]
+        self.data = {}
+        self.returns = None
+        self.portfolio_stats = {}
+
+    def fetch_portfolio_data(self, period: str = '1y', start_date: Optional[str] = None,
+                           end_date: Optional[str] = None) -> bool:
+        """Fetch data for all stocks in portfolio with flexible date options"""
+        print(f"Fetching data for portfolio: {', '.join(self.symbols)}")
+
+        for symbol in self.symbols:
+            try:
+                ticker = yf.Ticker(symbol)
+
+                # Handle different date input methods
+                if start_date and end_date:
+                    data = ticker.history(start=start_date, end=end_date)
+                elif start_date and not end_date:
+                    data = ticker.history(start=start_date)
+                else:
+                    data = ticker.history(period=period)
+
+                if not data.empty:
+                    self.data[symbol] = data['Close']
+                    print(f"{symbol}: {len(data)} days")
+                else:
+                    print(f"{symbol}: No data")
+            except Exception as e:
+                print(f"{symbol}: Error - {e}")
+
+        # Create combined dataframe
+        if self.data:
+            portfolio_df = pd.DataFrame(self.data)
+            self.returns = portfolio_df.pct_change().dropna()
+            return True
         return False
 
-def hurst_exponent(ts: np.ndarray) -> float:
-    series = np.array(ts, dtype=float)
-    if series.size < 20:
-        return np.nan
-    N = series.size
-    mean = series.mean()
-    Y = np.cumsum(series - mean)
-    R = Y.max() - Y.min()
-    S = series.std()
-    if S <= 0 or R <= 0:
-        return np.nan
-    try:
-        H = np.log(R / S) / np.log(N/2.0)
-    except Exception:
-        return np.nan
-    if not np.isfinite(H):
-        return np.nan
-    return float(np.clip(H, 0.0, 1.0))
+    def calculate_portfolio_stats(self) -> None:
+        """Calculate portfolio statistics"""
+        if self.returns is None:
+            return
 
-def rolling_hurst(series: pd.Series, window: int) -> pd.Series:
-    out = pd.Series(index=series.index, dtype=float)
-    for i in range(len(series)):
-        start = max(0, i - window + 1)
-        sub = series.iloc[start:i+1].dropna().values
-        out.iloc[i] = hurst_exponent(sub) if len(sub) > 20 else np.nan
-    return out
-
-def entropy_confidence(signals: np.ndarray) -> float:
-    s = np.array(np.abs(signals), dtype=float)
-    if s.sum() == 0:
-        return 0.0
-    p = s / s.sum()
-    entropy_val = -np.nansum(np.where(p > 0, p * np.log(p), 0.0))
-    max_e = np.log(len(p)) if len(p) > 0 else 1.0
-    C = 1.0 - entropy_val / max_e if max_e > 0 else 1.0
-    return float(np.clip(C, 0.0, 1.0))
-
-def compute_var_conditional(returns: pd.Series, confidence: float = 0.05) -> float:
-    """Compute conditional Value-at-Risk"""
-    if len(returns) < 10:
-        return np.nan
-    var_threshold = returns.quantile(confidence)
-    conditional_var = returns[returns <= var_threshold].mean()
-    return abs(conditional_var) if not np.isnan(conditional_var) else 0.01
-
-def compute_market_entropy(prices: pd.Series, window: int = 20) -> pd.Series:
-    """Compute market microstructure entropy"""
-    returns = prices.pct_change().dropna()
-    entropy_series = pd.Series(index=prices.index, dtype=float)
-    
-    for i in range(len(prices)):
-        start_idx = max(0, i - window + 1)
-        window_returns = returns.iloc[start_idx:i+1]
-        
-        if len(window_returns) < 5:
-            entropy_series.iloc[i] = 1.0
-            continue
-            
-        # Bin returns and compute entropy
-        hist, _ = np.histogram(window_returns.dropna(), bins=10, density=True)
-        hist = hist + 1e-10  # Avoid log(0)
-        entropy_val = -np.sum(hist * np.log(hist))
-        entropy_series.iloc[i] = entropy_val
-    
-    return entropy_series.fillna(1.0)
-
-# -------------------------
-# Original Indicators (kept as-is)
-# -------------------------
-
-def compute_indicators(df: pd.DataFrame) -> pd.DataFrame:
-    df = df.copy()
-    for c in ['Open','High','Low','Close','Adj Close','Volume']:
-        if c not in df.columns:
-            df[c] = np.nan
-    df['SMA_10'] = df['Close'].rolling(window=SMA_SHORT, min_periods=1).mean()
-    df['SMA_20'] = df['Close'].rolling(window=20, min_periods=1).mean()
-    df['SMA_50'] = df['Close'].rolling(window=SMA_LONG, min_periods=1).mean()
-    df['EMA_12'] = df['Close'].ewm(span=MACD_FAST, adjust=False).mean()
-    df['EMA_26'] = df['Close'].ewm(span=MACD_SLOW, adjust=False).mean()
-    delta = df['Close'].diff()
-    up = delta.clip(lower=0)
-    down = -delta.clip(upper=0)
-    avg_gain = up.rolling(RSI_WINDOW, min_periods=1).mean()
-    avg_loss = down.rolling(RSI_WINDOW, min_periods=1).mean()
-    rs = avg_gain / avg_loss.replace(0, np.nan)
-    df['RSI'] = 100 - (100 / (1 + rs))
-    df['RSI'].fillna(50, inplace=True)
-    df['MACD'] = df['EMA_12'] - df['EMA_26']
-    df['MACD_Signal'] = df['MACD'].ewm(span=MACD_SIGNAL, adjust=False).mean()
-    df['MACD_Hist'] = df['MACD'] - df['MACD_Signal']
-    df['BB_Mid'] = df['Close'].rolling(20, min_periods=1).mean()
-    bb_std = df['Close'].rolling(20, min_periods=1).std().fillna(0)
-    df['BB_Upper'] = df['BB_Mid'] + 2 * bb_std
-    df['BB_Lower'] = df['BB_Mid'] - 2 * bb_std
-    df['BB_Width'] = df['BB_Upper'] - df['BB_Lower']
-    df['BB_Position'] = ((df['Close'] - df['BB_Lower']) / df['BB_Width']).replace([np.inf, -np.inf], np.nan).fillna(0.5)
-    df['Daily_Return'] = df['Close'].pct_change().fillna(0)
-    df['Cumulative_Return'] = (1 + df['Daily_Return']).cumprod() - 1
-    df['Volatility'] = df['Daily_Return'].rolling(VOL_WINDOW, min_periods=1).std() * np.sqrt(252)
-    df['MA_Signal'] = np.where(df['SMA_10'] > df['SMA_50'], 1, -1)
-    df['RSI_Signal'] = np.where(df['RSI'] < 30, 1, np.where(df['RSI'] > 70, -1, 0))
-    df['MACD_Signal_Flag'] = np.where(df['MACD'] > df['MACD_Signal'], 1, -1)
-    df['BB_Signal'] = np.where(df['Close'] < df['BB_Lower'], 1, np.where(df['Close'] > df['BB_Upper'], -1, 0))
-    df['Combined_Base_Signal'] = df[['MA_Signal','RSI_Signal','MACD_Signal_Flag','BB_Signal']].sum(axis=1)
-    return df
-
-# -------------------------
-# Fundamental fetch (kept as-is)
-# -------------------------
-
-def fetch_fundamentals(symbols: list) -> pd.DataFrame:
-    recs = {}
-    for s in symbols:
         try:
-            t = yf.Ticker(s)
-            info = t.info
-            recs[s] = {
-                'trailingPE': info.get('trailingPE', np.nan),
-                'forwardPE': info.get('forwardPE', np.nan),
-                'returnOnEquity': info.get('returnOnEquity', np.nan),
-                'pegRatio': info.get('pegRatio', np.nan),
-                'priceToBook': info.get('priceToBook', np.nan),
-                'sharesOutstanding': info.get('sharesOutstanding', np.nan),
-                'averageVolume': info.get('averageVolume', np.nan),
-                'marketCap': info.get('marketCap', np.nan),
+            print("Calculating portfolio statistics...")
+
+            # Individual stock statistics
+            annual_returns = self.returns.mean() * 252
+            annual_volatility = self.returns.std() * np.sqrt(252)
+            sharpe_ratios = annual_returns / annual_volatility
+
+            # Correlation matrix
+            correlation_matrix = self.returns.corr()
+
+            # Simple equal-weight portfolio
+            equal_weights = np.array([1/len(self.symbols)] * len(self.symbols))
+            portfolio_return = np.sum(annual_returns * equal_weights)
+            portfolio_variance = np.dot(equal_weights.T, np.dot(correlation_matrix *
+                                      (annual_volatility.values * annual_volatility.values[:, np.newaxis]),
+                                      equal_weights))
+            portfolio_volatility = np.sqrt(portfolio_variance)
+            portfolio_sharpe = portfolio_return / portfolio_volatility
+
+            # Risk-based weighting (inverse volatility)
+            inv_volatility = 1 / annual_volatility
+            risk_weights = inv_volatility / inv_volatility.sum()
+            risk_portfolio_return = np.sum(annual_returns * risk_weights)
+            risk_portfolio_variance = np.dot(risk_weights.T, np.dot(correlation_matrix *
+                                           (annual_volatility.values * annual_volatility.values[:, np.newaxis]),
+                                           risk_weights))
+            risk_portfolio_volatility = np.sqrt(risk_portfolio_variance)
+            risk_portfolio_sharpe = risk_portfolio_return / risk_portfolio_volatility
+
+            self.portfolio_stats = {
+                'individual_returns': annual_returns.to_dict(),
+                'individual_volatility': annual_volatility.to_dict(),
+                'individual_sharpe': sharpe_ratios.to_dict(),
+                'correlation_matrix': correlation_matrix,
+                'equal_weight': {
+                    'weights': dict(zip(self.symbols, equal_weights)),
+                    'return': portfolio_return,
+                    'volatility': portfolio_volatility,
+                    'sharpe': portfolio_sharpe
+                },
+                'risk_weighted': {
+                    'weights': risk_weights.to_dict(),
+                    'return': risk_portfolio_return,
+                    'volatility': risk_portfolio_volatility,
+                    'sharpe': risk_portfolio_sharpe
+                }
             }
-        except Exception:
-            recs[s] = {k: np.nan for k in ['trailingPE','forwardPE','returnOnEquity','pegRatio','priceToBook','sharesOutstanding','averageVolume','marketCap']}
-    fund_df = pd.DataFrame.from_dict(recs, orient='index')
-    fund_df.index.name = 'Symbol'
-    return fund_df
 
-# -------------------------
-# Original Algorithms (kept as-is but enhanced)
-# -------------------------
+            print("Portfolio statistics calculated")
 
-def compute_regime_columns(df: pd.DataFrame) -> pd.DataFrame:
-    df = df.copy()
-    df['Hurst'] = rolling_hurst(df['Close'], HURST_WINDOW)
-    df['VolRank'] = df['Volatility'].rolling(VOL_WINDOW, min_periods=1).apply(lambda x: float(pd.Series(x).rank(pct=True).iloc[-1]*100) if len(x)>0 else 50.0)
-    def label(h):
-        if pd.isna(h):
-            return 'Neutral'
-        if h > 0.6:
-            return 'Trending'
-        elif h < 0.4:
-            return 'Mean-reverting'
-        else:
-            return 'Neutral'
-    df['RABE_Regime'] = df['Hurst'].apply(label)
-    return df
-
-def compute_AMSF(df: pd.DataFrame) -> pd.DataFrame:
-    df = df.copy()
-    df['MACD_Mag'] = np.tanh(df['MACD_Hist'] / (df['Close'] * 0.01 + 1e-9))
-    df['MA_Mag'] = np.tanh((df['SMA_10'] - df['SMA_50']) / (df['Close'] + 1e-9))
-    df['RSI_Mag'] = (50 - df['RSI']) / 50.0
-    df['BB_Mag'] = (0.5 - df['BB_Position']) * 2.0
-    df['RegimeScore'] = df['Hurst'].apply(lambda h: 1.0 if h>0.6 else (0.0 if h<0.4 else 0.5))
-    df['W_trend'] = df['RegimeScore']
-    df['W_mean'] = 1.0 - df['RegimeScore']
-    df['AMSF_Score'] = df['W_trend'] * (0.6*df['MACD_Mag'] + 0.4*df['MA_Mag']) + df['W_mean'] * (0.5*df['RSI_Mag'] + 0.5*df['BB_Mag'])
-    lambda_s = 1.0
-    dist_macd = np.abs(1.0 - df['RegimeScore'])
-    dist_ma = np.abs(1.0 - df['RegimeScore'])
-    dist_rsi = np.abs(0.0 - df['RegimeScore'])
-    dist_bb = np.abs(0.0 - df['RegimeScore'])
-    exps = np.exp(-lambda_s * np.vstack([dist_macd, dist_ma, dist_rsi, dist_bb]).T)
-    den = exps.sum(axis=1)
-    weights = exps / den[:, None]
-    df['Adaptive_SignalWeight_MACD'] = weights[:,0]
-    df['Adaptive_SignalWeight_MA'] = weights[:,1]
-    df['Adaptive_SignalWeight_RSI'] = weights[:,2]
-    df['Adaptive_SignalWeight_BB'] = weights[:,3]
-    df['AMSF_Signal'] = np.where(df['AMSF_Score'] > 0.3, 1, np.where(df['AMSF_Score'] < -0.3, -1, 0))
-    return df
-
-# -------------------------
-# NEW 5 NOVEL ALGORITHMS
-# -------------------------
-
-def compute_AHF_GNN(all_dfs: dict) -> dict:
-    """
-    1. Adaptive Hierarchical Factor Graph Neural Network (AHF-GNN)
-    Simplified implementation using correlation-based graph construction
-    """
-    symbols = list(all_dfs.keys())
-    
-    # Create cross-asset correlation matrix
-    returns_data = {}
-    for s in symbols:
-        df = all_dfs[s]
-        if df is None or df.empty:
-            continue
-        returns_data[s] = df['Daily_Return'].fillna(0)
-    
-    if len(returns_data) < 2:
-        # Not enough data for graph construction
-        for s in symbols:
-            if s in all_dfs and all_dfs[s] is not None:
-                df = all_dfs[s].copy()
-                df['AHF_GNN_Score'] = 0.0
-                df['AHF_Centrality'] = 0.5
-                df['AHF_ClusterID'] = 1
-                all_dfs[s] = df
-        return all_dfs
-    
-    returns_df = pd.DataFrame(returns_data).fillna(0)
-    corr_matrix = returns_df.corr().abs()
-    
-    # Create graph from correlation matrix (edges where correlation > threshold)
-    G = nx.Graph()
-    threshold = 0.3
-    
-    for i, sym1 in enumerate(corr_matrix.index):
-        G.add_node(sym1)
-        for j, sym2 in enumerate(corr_matrix.columns):
-            if i < j and corr_matrix.loc[sym1, sym2] > threshold:
-                G.add_edge(sym1, sym2, weight=corr_matrix.loc[sym1, sym2])
-    
-    # Compute centrality measures
-    try:
-        centrality = nx.eigenvector_centrality(G, max_iter=1000)
-    except:
-        centrality = {s: 0.5 for s in symbols}
-    
-    # Detect communities (simplified clustering)
-    try:
-        communities = list(nx.connected_components(G))
-        cluster_map = {}
-        for i, community in enumerate(communities):
-            for node in community:
-                cluster_map[node] = i + 1
-    except:
-        cluster_map = {s: 1 for s in symbols}
-    
-    # Add AHF-GNN features to each dataframe
-    for s in symbols:
-        if s not in all_dfs or all_dfs[s] is None or all_dfs[s].empty:
-            continue
-        
-        df = all_dfs[s].copy()
-        
-        # AHF-GNN Score: combines centrality with recent performance
-        recent_return = df['Daily_Return'].tail(10).mean()
-        centrality_score = centrality.get(s, 0.5)
-        
-        df['AHF_GNN_Score'] = np.tanh(centrality_score * 2.0 + recent_return * 10.0)
-        df['AHF_Centrality'] = centrality_score
-        df['AHF_ClusterID'] = cluster_map.get(s, 1)
-        
-        all_dfs[s] = df
-    
-    return all_dfs
-
-def compute_CAAE(all_dfs: dict, fundamentals_df: pd.DataFrame) -> dict:
-    """
-    2. Causal Alpha Attribution Engine (CAAE)
-    Uses instrumental variables approach for causal inference
-    """
-    symbols = list(all_dfs.keys())
-    
-    for s in symbols:
-        df = all_dfs.get(s)
-        if df is None or df.empty:
-            continue
-        
-        df = df.copy()
-        
-        # Create instrumental variable (lagged fundamental ratio)
-        if fundamentals_df is not None and s in fundamentals_df.index:
-            pe_ratio = fundamentals_df.loc[s].get('trailingPE', np.nan)
-            if np.isfinite(pe_ratio) and pe_ratio > 0:
-                # Use PE ratio as instrumental variable
-                iv_strength = CAAE_IV_STRENGTH * (1.0 / pe_ratio)
-            else:
-                iv_strength = CAAE_IV_STRENGTH
-        else:
-            iv_strength = CAAE_IV_STRENGTH
-        
-        # Simplified causal attribution using 2SLS approach
-        returns = df['Daily_Return'].fillna(0)
-        amsf_signal = df.get('AMSF_Score', pd.Series(0, index=df.index))
-        
-        # Stage 1: Regress signal on instrument
-        instrument = np.sin(np.arange(len(df)) * iv_strength)  # Synthetic instrument
-        
-        # Stage 2: Causal alpha attribution
-        causal_alpha = []
-        for i in range(len(df)):
-            if i < 5:  # Need minimum observations
-                causal_alpha.append(0.0)
-                continue
-            
-            # Rolling causal estimation
-            window_returns = returns.iloc[max(0, i-20):i+1]
-            window_signal = amsf_signal.iloc[max(0, i-20):i+1]
-            window_instrument = instrument[max(0, i-20):i+1]
-            
-            try:
-                # Simplified IV estimation
-                iv_corr = np.corrcoef(window_signal, window_instrument)[0, 1]
-                signal_return_corr = np.corrcoef(window_signal, window_returns)[0, 1]
-                
-                if abs(iv_corr) > 0.1:  # Valid instrument
-                    causal_coef = signal_return_corr / iv_corr
-                else:
-                    causal_coef = 0.0
-                
-                causal_alpha.append(np.clip(causal_coef, -1.0, 1.0))
-            except:
-                causal_alpha.append(0.0)
-        
-        df['CAAE_CausalAlpha'] = causal_alpha
-        df['CAAE_InstrumentStrength'] = iv_strength
-        df['CAAE_Attribution'] = np.array(causal_alpha) * amsf_signal.fillna(0)
-        
-        all_dfs[s] = df
-    
-    return all_dfs
-
-def compute_SPRINT_RL(all_dfs: dict) -> dict:
-    """
-    3. Streaming Portfolio Rebalancing with Transaction Cost-Aware RL (SPRINT-RL)
-    Simplified RL agent for execution optimization
-    """
-    symbols = list(all_dfs.keys())
-    
-    for s in symbols:
-        df = all_dfs.get(s)
-        if df is None or df.empty:
-            continue
-        
-        df = df.copy()
-        
-        # Simplified RL agent state: [position, signal, volatility, spread_estimate]
-        position = np.zeros(len(df))
-        rl_actions = np.zeros(len(df))
-        execution_costs = np.zeros(len(df))
-        
-        # Q-learning parameters
-        q_table = np.zeros((3, 3))  # 3 states × 3 actions (buy, hold, sell)
-        epsilon = 0.1
-        learning_rate = SPRINT_LEARNING_RATE
-        gamma = 0.95
-        
-        signal = df.get('AMSF_Score', pd.Series(0, index=df.index)).fillna(0)
-        volatility = df['Volatility'].fillna(df['Volatility'].mean())
-        
-        for i in range(1, len(df)):
-            # State discretization
-            if signal.iloc[i] > 0.3:
-                signal_state = 2  # Bullish
-            elif signal.iloc[i] < -0.3:
-                signal_state = 0  # Bearish  
-            else:
-                signal_state = 1  # Neutral
-                
-            # ε-greedy action selection
-            if np.random.random() < epsilon:
-                action = np.random.choice(3)  # Random action
-            else:
-                action = np.argmax(q_table[signal_state, :])  # Best action
-            
-            # Execute action (simplified)
-            if action == 0:  # Sell
-                new_position = -1
-            elif action == 2:  # Buy
-                new_position = 1
-            else:  # Hold
-                new_position = position[i-1]
-            
-            # Calculate execution cost (simplified market impact model)
-            position_change = abs(new_position - position[i-1])
-            spread_cost = 0.001 * position_change  # 10bp spread cost
-            impact_cost = volatility.iloc[i] * position_change * 0.1  # Impact proportional to volatility
-            total_cost = spread_cost + impact_cost
-            
-            # Calculate reward (return minus costs)
-            portfolio_return = position[i-1] * df['Daily_Return'].iloc[i]
-            reward = portfolio_return - total_cost
-            
-            # Update Q-table (simplified)
-            if i > 1:
-                old_signal_state = signal_state if i == 1 else (2 if signal.iloc[i-1] > 0.3 else (0 if signal.iloc[i-1] < -0.3 else 1))
-                old_action = int(rl_actions[i-1])
-                q_table[old_signal_state, old_action] += learning_rate * (
-                    reward + gamma * np.max(q_table[signal_state, :]) - q_table[old_signal_state, old_action]
-                )
-            
-            position[i] = new_position
-            rl_actions[i] = action
-            execution_costs[i] = total_cost
-        
-        df['SPRINT_Position'] = position
-        df['SPRINT_Action'] = rl_actions
-        df['SPRINT_ExecutionCost'] = execution_costs
-        df['SPRINT_NetReturn'] = position * df['Daily_Return'] - execution_costs
-        
-        all_dfs[s] = df
-    
-    return all_dfs
-
-def compute_MRS_KF(all_dfs: dict) -> dict:
-    """
-    4. Multi-Resolution Regime-Switching Kalman Filter (MRS-KF)
-    Simplified multi-scale state estimation using wavelets concept
-    """
-    symbols = list(all_dfs.keys())
-    
-    for s in symbols:
-        df = all_dfs.get(s)
-        if df is None or df.empty:
-            continue
-        
-        df = df.copy()
-        prices = df['Close'].fillna(method='ffill') if hasattr(df['Close'], 'fillna') else df['Close'].ffill()
-        
-        # Multi-resolution decomposition (simplified wavelet approach)
-        # Level 1: High frequency (daily)
-        level1 = prices.diff().fillna(0)
-        
-        # Level 2: Medium frequency (5-day moving average)
-        level2 = prices.rolling(5).mean().diff().fillna(0)
-        
-        # Level 3: Low frequency (20-day moving average)  
-        level3 = prices.rolling(20).mean().diff().fillna(0)
-        
-        # Kalman Filter components (simplified)
-        # State: [level1, level2, level3, trend]
-        n_states = 4
-        n_obs = 1
-        
-        # Initialize state estimates
-        state_estimates = np.zeros((len(df), n_states))
-        state_covariances = np.zeros((len(df), n_states, n_states))
-        
-        # Initial conditions
-        state_estimates[0] = [0, 0, 0, 0]
-        state_covariances[0] = np.eye(n_states) * 0.1
-        
-        # Process and observation noise (simplified)
-        Q = np.eye(n_states) * 0.01  # Process noise
-        R = np.array([[0.1]])  # Observation noise
-        
-        # State transition matrix (simplified AR model)
-        F = np.array([
-            [0.8, 0.1, 0.1, 0.0],  # Level 1 state
-            [0.0, 0.9, 0.1, 0.0],  # Level 2 state  
-            [0.0, 0.0, 0.95, 0.05],  # Level 3 state
-            [0.0, 0.0, 0.0, 0.99]   # Trend state
-        ])
-        
-        # Observation matrix
-        H = np.array([[1, 1, 1, 1]])  # Observe sum of all states
-        
-        for i in range(1, len(df)):
-            # Prediction step
-            x_pred = F @ state_estimates[i-1]
-            P_pred = F @ state_covariances[i-1] @ F.T + Q
-            
-            # Observation
-            observation = np.array([level1.iloc[i]])
-            
-            # Update step
-            y = observation - H @ x_pred
-            S = H @ P_pred @ H.T + R
-            
-            try:
-                K = P_pred @ H.T @ np.linalg.inv(S)
-                state_estimates[i] = x_pred + (K @ y).flatten()
-                state_covariances[i] = (np.eye(n_states) - K @ H) @ P_pred
-            except:
-                # Fallback if matrix is singular
-                state_estimates[i] = x_pred
-                state_covariances[i] = P_pred
-        
-        # Extract multi-resolution features
-        df['MRS_Level1'] = state_estimates[:, 0]
-        df['MRS_Level2'] = state_estimates[:, 1] 
-        df['MRS_Level3'] = state_estimates[:, 2]
-        df['MRS_Trend'] = state_estimates[:, 3]
-        df['MRS_TotalSignal'] = np.sum(state_estimates, axis=1)
-        df['MRS_Uncertainty'] = np.trace(state_covariances, axis1=1, axis2=2)
-        
-        all_dfs[s] = df
-    
-    return all_dfs
-
-def compute_DFAM(all_dfs: dict) -> dict:
-    """
-    5. Decentralized Federated Alpha Mining (DFAM)
-    Simplified federated learning with differential privacy
-    """
-    symbols = list(all_dfs.keys())
-    
-    if len(symbols) < 2:
-        # Need multiple "clients" for federated learning
-        for s in symbols:
-            if s in all_dfs and all_dfs[s] is not None:
-                df = all_dfs[s].copy()
-                df['DFAM_GlobalModel'] = 0.0
-                df['DFAM_PrivacyNoise'] = 0.0
-                df['DFAM_FederatedScore'] = 0.0
-                all_dfs[s] = df
-        return all_dfs
-    
-    # Global model parameters (shared)
-    global_weights = np.random.normal(0, 0.1, 5)  # 5 features
-    
-    # Federated learning rounds (simplified)
-    n_rounds = 3
-    
-    for round_i in range(n_rounds):
-        local_updates = []
-        
-        # Each symbol acts as a "client"
-        for s in symbols:
-            df = all_dfs.get(s)
-            if df is None or df.empty:
-                continue
-                
-            # Prepare features for local training
-            features = []
-            target = df['Daily_Return'].fillna(0).values
-            
-            # Feature matrix: [RSI, MACD, Volatility, AMSF_Score, Hurst]
-            for col in ['RSI', 'MACD', 'Volatility', 'AMSF_Score', 'Hurst']:
-                if col in df.columns:
-                    feat = df[col].fillna(df[col].mean() if col in df.columns else 0.0).values
-                else:
-                    feat = np.zeros(len(df))
-                features.append(feat)
-            
-            if len(features) < 5:
-                continue
-                
-            X = np.column_stack(features)
-            
-            # Local gradient computation (simplified linear regression)
-            try:
-                # Add regularization
-                XtX = X.T @ X + np.eye(X.shape[1]) * 0.01
-                Xty = X.T @ target
-                local_weights = np.linalg.solve(XtX, Xty)
-                
-                # Add differential privacy noise
-                privacy_noise = np.random.laplace(0, 1.0/DFAM_PRIVACY_EPSILON, len(local_weights))
-                local_weights += privacy_noise
-                
-                local_updates.append(local_weights)
-            except:
-                local_updates.append(global_weights)
-        
-        # Aggregate local updates (FedAvg)
-        if local_updates:
-            global_weights = np.mean(local_updates, axis=0)
-    
-    # Apply final global model to each asset
-    for s in symbols:
-        df = all_dfs.get(s)
-        if df is None or df.empty:
-            continue
-            
-        df = df.copy()
-        
-        # Prepare features
-        features = []
-        for col in ['RSI', 'MACD', 'Volatility', 'AMSF_Score', 'Hurst']:
-            if col in df.columns:
-                feat = df[col].fillna(df[col].mean() if col in df.columns else 0.0).values
-            else:
-                feat = np.zeros(len(df))
-            features.append(feat)
-        
-        if len(features) >= 5:
-            X = np.column_stack(features)
-            
-            # Global model prediction
-            global_pred = X @ global_weights
-            
-            # Privacy noise added during training
-            privacy_noise_level = np.random.exponential(1.0/DFAM_PRIVACY_EPSILON, len(df))
-            
-            df['DFAM_GlobalModel'] = global_pred
-            df['DFAM_PrivacyNoise'] = privacy_noise_level
-            df['DFAM_FederatedScore'] = np.tanh(global_pred)
-        else:
-            df['DFAM_GlobalModel'] = 0.0
-            df['DFAM_PrivacyNoise'] = 0.0
-            df['DFAM_FederatedScore'] = 0.0
-        
-        all_dfs[s] = df
-    
-    return all_dfs
-
-# -------------------------
-# NEW 5 MATHEMATICAL FORMULATIONS
-# -------------------------
-
-def compute_dynamic_information_ratio(df: pd.DataFrame) -> pd.DataFrame:
-    """
-    1. Dynamic Information Ratio with Endogenous Risk Scaling (DIR)
-    DIR_t = (alpha_t / sigma_epsilon_t) * exp(-lambda * d/dt VaR_t^(c))
-    """
-    df = df.copy()
-    
-    # Calculate instantaneous alpha (simplified as excess return over risk-free rate)
-    risk_free_rate = 0.02 / 252  # 2% annual risk-free rate
-    alpha_t = df['Daily_Return'] - risk_free_rate
-    
-    # Calculate residual volatility (rolling)
-    window = 20
-    sigma_epsilon = df['Daily_Return'].rolling(window).std().fillna(df['Daily_Return'].std())
-    
-    # Calculate conditional VaR
-    var_conditional = []
-    for i in range(len(df)):
-        start_idx = max(0, i - window + 1)
-        window_returns = df['Daily_Return'].iloc[start_idx:i+1]
-        var_cond = compute_var_conditional(window_returns)
-        var_conditional.append(var_cond)
-    
-    var_conditional = pd.Series(var_conditional, index=df.index)
-    
-    # Calculate rate of change of VaR
-    d_var_dt = var_conditional.diff().fillna(0)
-    
-    # Dynamic Information Ratio
-    lambda_param = 2.0  # regime sensitivity parameter
-    dir_scores = (alpha_t / sigma_epsilon) * np.exp(-lambda_param * d_var_dt)
-    
-    df['DIR_Alpha'] = alpha_t
-    df['DIR_ResidualVol'] = sigma_epsilon
-    df['DIR_ConditionalVaR'] = var_conditional
-    df['DIR_VaRChange'] = d_var_dt
-    df['DIR_Score'] = dir_scores.replace([np.inf, -np.inf], 0).fillna(0)
-    
-    return df
-
-def compute_non_ergodic_alpha_decay(df: pd.DataFrame) -> pd.DataFrame:
-    """
-    2. Non-Ergodic Alpha Decay Function
-    alpha(tau) = alpha_0 * exp(-kappa * H(tau))
-    """
-    df = df.copy()
-    
-    # Calculate market entropy H(tau)
-    entropy_series = compute_market_entropy(df['Close'])
-    
-    # Initial alpha (simplified as recent average excess return)
-    alpha_0 = df['Daily_Return'].rolling(10).mean().fillna(0)
-    
-    # Decay sensitivity parameter
-    kappa = 1.5
-    
-    # Alpha decay function
-    alpha_decay = alpha_0 * np.exp(-kappa * entropy_series)
-    
-    df['NEAD_MarketEntropy'] = entropy_series
-    df['NEAD_InitialAlpha'] = alpha_0
-    df['NEAD_DecayedAlpha'] = alpha_decay
-    df['NEAD_DecayFactor'] = np.exp(-kappa * entropy_series)
-    
-    return df
-
-def compute_wasserstein_factor_orthogonalization(all_dfs: dict) -> dict:
-    """
-    3. Factor Orthogonalization via Wasserstein Projection
-    F^perp = argmin W_2(P_ret, P_F*beta) s.t. Cov(F_i, F_j) = 0
-    """
-    symbols = list(all_dfs.keys())
-    
-    if len(symbols) < 2:
-        return all_dfs
-    
-    # Collect returns data
-    returns_data = {}
-    for s in symbols:
-        df = all_dfs[s]
-        if df is None or df.empty:
-            continue
-        returns_data[s] = df['Daily_Return'].fillna(0)
-    
-    returns_df = pd.DataFrame(returns_data).fillna(0)
-    
-    if returns_df.empty:
-        return all_dfs
-    
-    # Extract factors (simplified: use technical indicators as raw factors)
-    factors = {}
-    for s in symbols:
-        df = all_dfs[s]
-        if df is None or df.empty:
-            continue
-        
-        factor_data = []
-        for factor_name in ['RSI', 'MACD', 'BB_Position', 'AMSF_Score']:
-            if factor_name in df.columns:
-                factor_data.append(df[factor_name].fillna(0).values)
-            else:
-                factor_data.append(np.zeros(len(df)))
-        
-        if factor_data:
-            factors[s] = np.column_stack(factor_data)
-    
-    # Orthogonalize factors using Gram-Schmidt process with Wasserstein distance penalty
-    for s in symbols:
-        df = all_dfs.get(s)
-        if df is None or df.empty or s not in factors:
-            continue
-        
-        df = df.copy()
-        
-        # Original factors
-        F_orig = factors[s]
-        
-        # Gram-Schmidt orthogonalization
-        F_orth = np.zeros_like(F_orig)
-        
-        for i in range(F_orig.shape[1]):
-            # Start with original factor
-            v = F_orig[:, i].copy()
-            
-            # Subtract projections onto previous orthogonal factors
-            for j in range(i):
-                proj = np.dot(v, F_orth[:, j]) / (np.dot(F_orth[:, j], F_orth[:, j]) + 1e-10)
-                v -= proj * F_orth[:, j]
-            
-            # Normalize
-            norm = np.linalg.norm(v)
-            F_orth[:, i] = v / (norm + 1e-10)
-        
-        # Calculate Wasserstein distances (simplified using empirical distributions)
-        wasserstein_scores = []
-        returns = df['Daily_Return'].fillna(0).values
-        
-        for i in range(F_orth.shape[1]):
-            try:
-                # Simplified Wasserstein distance between returns and factor distributions
-                factor_dist = F_orth[:, i]
-                w_dist = wasserstein_distance(returns, factor_dist)
-                wasserstein_scores.append(w_dist)
-            except:
-                wasserstein_scores.append(1.0)
-        
-        # Store orthogonalized factors
-        df['WFO_Factor1'] = F_orth[:, 0] if F_orth.shape[1] > 0 else 0
-        df['WFO_Factor2'] = F_orth[:, 1] if F_orth.shape[1] > 1 else 0
-        df['WFO_Factor3'] = F_orth[:, 2] if F_orth.shape[1] > 2 else 0
-        df['WFO_Factor4'] = F_orth[:, 3] if F_orth.shape[1] > 3 else 0
-        df['WFO_WassersteinScore'] = np.mean(wasserstein_scores)
-        df['WFO_OrthogonalityScore'] = np.mean([np.abs(np.corrcoef(F_orth[:, i], F_orth[:, j])[0, 1]) 
-                                               for i in range(F_orth.shape[1]) 
-                                               for j in range(i+1, F_orth.shape[1])]) if F_orth.shape[1] > 1 else 0
-        
-        all_dfs[s] = df
-    
-    return all_dfs
-
-def compute_liquidity_adjusted_execution_cost(df: pd.DataFrame) -> pd.DataFrame:
-    """
-    4. Real-Time Liquidity-Adjusted Execution Cost Metric (LACM)
-    LACM_t = integral_0^Q [s(q) + eta(q) * sqrt(dq/dt)] dq
-    """
-    df = df.copy()
-    
-    # Estimate bid-ask spread (simplified using volatility)
-    spread_estimate = df['Volatility'] * 0.1  # 10% of volatility as spread proxy
-    
-    # Estimate market impact elasticity
-    volume_ma = df['Volume'].rolling(20).mean().fillna(df['Volume'].mean())
-    price_impact_elasticity = 1.0 / np.sqrt(volume_ma + 1e6)  # Lower liquidity = higher impact
-    
-    # Trade size (simplified as proportion of average volume)
-    trade_size_ratio = 0.05  # 5% of average volume
-    Q = volume_ma * trade_size_ratio
-    
-    # Execution rate (simplified as constant)
-    dq_dt = Q / 60  # Execute over 60 time periods
-    
-    # LACM calculation (simplified discrete approximation)
-    lacm_scores = []
-    
-    for i in range(len(df)):
-        s_q = spread_estimate.iloc[i]  # Spread cost
-        eta_q = price_impact_elasticity.iloc[i]  # Impact elasticity
-        dq_dt_i = dq_dt.iloc[i] if not pd.isna(dq_dt.iloc[i]) else 1.0
-        
-        # Simplified LACM: spread cost + impact cost
-        lacm = s_q + eta_q * np.sqrt(dq_dt_i)
-        lacm_scores.append(lacm)
-    
-    df['LACM_SpreadCost'] = spread_estimate
-    df['LACM_ImpactElasticity'] = price_impact_elasticity
-    df['LACM_TradeSize'] = Q
-    df['LACM_ExecutionRate'] = dq_dt
-    df['LACM_TotalCost'] = lacm_scores
-    
-    return df
-
-def compute_topological_persistence_score(df: pd.DataFrame) -> pd.DataFrame:
-    """
-    5. Topological Persistence Score for Alpha Robustness
-    T(alpha) = sum_k (b_k - d_k)^p * I{d_k - b_k > epsilon}
-    """
-    df = df.copy()
-    
-    # Get alpha signal (using AMSF_Score as proxy)
-    alpha_signal = df.get('AMSF_Score', df.get('Combined_Base_Signal', pd.Series(0, index=df.index))).fillna(0)
-    
-    # Simplified topological analysis using local extrema as topological features
-    # In practice, this would use more sophisticated TDA libraries
-    
-    persistence_scores = []
-    window = 30
-    epsilon = 0.1
-    p = 2
-    
-    for i in range(len(df)):
-        start_idx = max(0, i - window + 1)
-        window_signal = alpha_signal.iloc[start_idx:i+1]
-        
-        if len(window_signal) < 10:
-            persistence_scores.append(0.0)
-            continue
-        
-        # Find local maxima and minima (simplified topological features)
-        signal_array = window_signal.values
-        
-        # Local maxima (births)
-        maxima_indices = []
-        for j in range(1, len(signal_array) - 1):
-            if signal_array[j] > signal_array[j-1] and signal_array[j] > signal_array[j+1]:
-                maxima_indices.append(j)
-        
-        # Local minima (deaths)
-        minima_indices = []
-        for j in range(1, len(signal_array) - 1):
-            if signal_array[j] < signal_array[j-1] and signal_array[j] < signal_array[j+1]:
-                minima_indices.append(j)
-        
-        # Calculate persistence (birth-death intervals)
-        total_persistence = 0.0
-        
-        # Pair maxima with subsequent minima
-        for max_idx in maxima_indices:
-            # Find next minimum
-            subsequent_minima = [min_idx for min_idx in minima_indices if min_idx > max_idx]
-            
-            if subsequent_minima:
-                death_idx = subsequent_minima[0]
-                birth_time = max_idx
-                death_time = death_idx
-                
-                persistence = death_time - birth_time
-                
-                if persistence > epsilon:
-                    total_persistence += persistence ** p
-        
-        persistence_scores.append(total_persistence)
-    
-    # Normalize persistence scores
-    max_persistence = np.max(persistence_scores) if persistence_scores else 1.0
-    normalized_persistence = [score / (max_persistence + 1e-10) for score in persistence_scores]
-    
-    df['TPS_RawPersistence'] = persistence_scores
-    df['TPS_NormalizedPersistence'] = normalized_persistence
-    df['TPS_RobustnessScore'] = normalized_persistence  # Higher = more robust alpha
-    
-    return df
-
-# -------------------------
-# Original functions (FTCS, DPS, CASP, etc.) - kept as-is
-# -------------------------
-
-def compute_FTCS(all_dfs: dict, fundamentals_df: pd.DataFrame) -> dict:
-    tech_perc = {}
-    for sym, df in all_dfs.items():
-        if df is None or df.empty:
-            tech_perc[sym] = pd.Series(dtype=float)
-            continue
-        tmp = df['AMSF_Score'].rank(pct=True) * 100
-        tech_perc[sym] = tmp
-    fund_perc = {}
-    if fundamentals_df is None or fundamentals_df.empty:
-        for s in all_dfs.keys():
-            fund_perc[s] = 50.0
-    else:
-        cols = [c for c in ['trailingPE','forwardPE','returnOnEquity','pegRatio','priceToBook'] if c in fundamentals_df.columns]
-        if not cols:
-            for s in all_dfs.keys():
-                fund_perc[s] = 50.0
-        else:
-            colvals_df = fundamentals_df[cols].apply(pd.to_numeric, errors='coerce')
-            for s in all_dfs.keys():
-                vals = []
-                if s in fundamentals_df.index:
-                    for c in cols:
-                        try:
-                            colvals = colvals_df[c]
-                            v = colvals.loc[s]
-                            if np.isnan(v):
-                                vals.append(50.0)
-                            else:
-                                idx = colvals.index.get_loc(s)
-                                perc = float(rankdata(colvals.fillna(colvals.median()), method='average')[idx]) / len(colvals) * 100
-                                vals.append(perc)
-                        except Exception:
-                            vals.append(50.0)
-                else:
-                    vals = [50.0]*len(cols)
-                fund_perc[s] = np.nanmean(vals) if len(vals)>0 else 50.0
-    for sym, df in all_dfs.items():
-        if df is None or df.empty:
-            continue
-        df = df.copy()
-        tech = tech_perc.get(sym, pd.Series(np.full(len(df),50.0), index=df.index))
-        df['TechPerc'] = tech.values if len(tech)>0 else 50.0
-        df['FundPerc'] = fund_perc.get(sym, 50.0)
-        confs = []
-        for _, r in df.iterrows():
-            base = np.array([r.get('AMSF_Score',0.0), r.get('Combined_Base_Signal',0.0), 1.0/(r.get('Volatility',1e-9)+1e-9)])
-            confs.append(entropy_confidence(base))
-        df['SignalConfidence'] = confs
-        df['alpha_FTCS'] = 1.0 - df['SignalConfidence']
-        df['FTCS_Score'] = df['alpha_FTCS'] * df['FundPerc'] + (1.0 - df['alpha_FTCS']) * df['TechPerc']
-        df['FTCS_Formula'] = df['FTCS_Score']
-        all_dfs[sym] = df
-    return all_dfs
-
-def compute_DPS(df: pd.DataFrame, capital: float = DPS_K) -> pd.DataFrame:
-    df = df.copy()
-    cumulative = (1 + df['Daily_Return']).cumprod().fillna(1)
-    running_max = cumulative.cummax()
-    drawdown = (running_max - cumulative) / running_max
-    df['Drawdown'] = drawdown.fillna(0.0)
-    sigma = df['Daily_Return'].rolling(VOL_WINDOW, min_periods=1).std()
-    sigma = sigma.replace(0, np.nan).fillna(sigma.mean() if np.isfinite(sigma.mean()) else 1e-6)
-    sig = df.get('AMSF_Score', df.get('Combined_Base_Signal', 0.0)).abs()
-    df['DPS_PositionSize'] = capital * sig / (sigma * (1 + df['Drawdown']) + 1e-9)
-    df['DPS_PositionSize'] = df['DPS_PositionSize'].clip(0, capital)
-    df['Dynamic_PositionSize'] = df['DPS_PositionSize']
-    return df
-
-def compute_CASP(all_dfs: dict):
-    symbols = list(all_dfs.keys())
-    returns = {}
-    for s in symbols:
-        df = all_dfs[s]
-        if df is None or df.empty:
-            returns[s] = pd.Series(dtype=float)
-        else:
-            tmp = df['Daily_Return'].copy()
-            tmp.index = pd.to_datetime(df['Date']) if 'Date' in df.columns else pd.to_datetime(df.index)
-            returns[s] = tmp
-    returns_df = pd.DataFrame(returns).sort_index().fillna(0.0)
-    leadership = {s: [] for s in symbols}
-    for a in symbols:
-        for b in symbols:
-            if a == b:
-                continue
-            try:
-                series = returns_df[[b, a]].dropna()
-                if len(series) < 30:
-                    continue
-                maxlag = min(GRANGER_MAXLAG, max(1, len(series)//10))
-                res = grangercausalitytests(series, maxlag=maxlag, verbose=False)
-                pvals = []
-                for lag, out in res.items():
-                    try:
-                        ftest = out[0].get('ssr_ftest', None)
-                        if ftest:
-                            pvals.append(ftest[1])
-                    except Exception:
-                        pass
-                if any([p < 0.05 for p in pvals]):
-                    leadership[a].append(b)
-            except Exception:
-                continue
-    adjusted = {}
-    for s in symbols:
-        leaders = leadership.get(s, [])
-        if not leaders:
-            adjusted[s] = 0.0
-            continue
-        try:
-            recent = returns_df[leaders].tail(5).mean(axis=1).mean()
-            adjusted[s] = recent if np.isfinite(recent) else 0.0
-        except Exception:
-            adjusted[s] = 0.0
-    for s, df in all_dfs.items():
-        if df is None or df.empty:
-            continue
-        adj = adjusted.get(s, 0.0)
-        df = df.copy()
-        df['CASP_Adjustment'] = adj
-        df['AMSF_Score'] = np.tanh(df['AMSF_Score'] + df['CASP_Adjustment']*5.0)
-        all_dfs[s] = df
-    return all_dfs, leadership
-
-def compute_FMDA(fundamentals_df: pd.DataFrame, gamma: float = FMDA_GAMMA) -> pd.DataFrame:
-    if fundamentals_df is None or fundamentals_df.empty:
-        return fundamentals_df
-    fd = fundamentals_df.copy()
-    fd['Fundamental_DecayFactor'] = 1.0
-    return fd
-
-def compute_VR_MACD(df: pd.DataFrame, tau_min: int = 6, tau_max: int = 30) -> pd.DataFrame:
-    df = df.copy()
-    vr = df.get('VolRank', pd.Series(50.0, index=df.index)).fillna(50.0)
-    tau = tau_min + (tau_max - tau_min) * (1 - vr / 100.0)
-    close = df['Close'].values
-    n = len(close)
-    vr_macd = np.zeros(n)
-    vr_sig = np.zeros(n)
-    ema_fast = close[0] if n>0 else 0.0
-    ema_slow = close[0] if n>0 else 0.0
-    sig = 0.0
-    for i in range(n):
-        tau_i = float(tau.iloc[i]) if hasattr(tau,'iloc') else float(tau[i])
-        fast_span_i = max(2, int(max(2, tau_i * 0.4)))
-        slow_span_i = max(fast_span_i+1, int(tau_i * 1.0))
-        alpha_fast = 2.0 / (fast_span_i + 1.0)
-        alpha_slow = 2.0 / (slow_span_i + 1.0)
-        price = close[i]
-        ema_fast = alpha_fast * price + (1 - alpha_fast) * ema_fast
-        ema_slow = alpha_slow * price + (1 - alpha_slow) * ema_slow
-        macd_i = ema_fast - ema_slow
-        alpha_sig = 2.0 / (MACD_SIGNAL + 1.0)
-        sig = alpha_sig * macd_i + (1 - alpha_sig) * sig
-        vr_macd[i] = macd_i
-        vr_sig[i] = sig
-    df['VR_MACD'] = vr_macd
-    df['VR_MACD_Signal'] = vr_sig
-    df['VR_EMA_Span'] = tau
-    return df
-
-def compute_LWPC(all_dfs: dict, fundamentals_df: pd.DataFrame) -> pd.DataFrame:
-    symbols = list(all_dfs.keys())
-    vol_list = []
-    liq_list = []
-    for s in symbols:
-        df = all_dfs[s]
-        if df is None or df.empty:
-            vol_list.append(np.nan)
-            liq_list.append(np.nan)
-            continue
-        sigma = df['Daily_Return'].rolling(VOL_WINDOW, min_periods=1).std().iloc[-1]
-        sigma = float(sigma if np.isfinite(sigma) else 1e-6)
-        avg_vol = float(df['Volume'].tail(VOL_WINDOW).mean() if not df['Volume'].tail(VOL_WINDOW).empty else 1.0)
-        price = float(df['Close'].iloc[-1])
-        shares = None
-        if fundamentals_df is not None and s in fundamentals_df.index and 'sharesOutstanding' in fundamentals_df.columns:
-            try:
-                shares = float(fundamentals_df.loc[s,'sharesOutstanding'])
-            except Exception:
-                shares = None
-        if shares is None or shares == 0 or np.isnan(shares):
-            shares = 1e9
-        L = avg_vol / (price * shares + 1e-9)
-        vol_list.append(sigma)
-        liq_list.append(L)
-    vol_arr = np.array([v if (v>0 and np.isfinite(v)) else 1e-6 for v in vol_list])
-    liq_arr = np.array([l if (l>0 and np.isfinite(l)) else 1e-12 for l in liq_list])
-    inv = 1.0 / (vol_arr * liq_arr)
-    inv[np.isinf(inv)] = 0.0
-    if np.nansum(inv) == 0:
-        weights = np.ones(len(inv)) / len(inv)
-    else:
-        weights = inv / np.nansum(inv)
-    weight_map = {s: float(weights[i]) for i,s in enumerate(symbols)}
-    for s, df in all_dfs.items():
-        if df is None or df.empty:
-            continue
-        df = df.copy()
-        df['LWPC_Weight'] = weight_map.get(s, 0.0)
-        all_dfs[s] = df
-    return pd.DataFrame({'Symbol': symbols, 'Vol': vol_list, 'Liquidity': liq_list, 'LWPC_Weight': weights})
-
-def compute_ARFS(fundamentals_df: pd.DataFrame) -> pd.DataFrame:
-    if fundamentals_df is None or fundamentals_df.empty:
-        return pd.DataFrame()
-    cols = [c for c in ['trailingPE','forwardPE','returnOnEquity','pegRatio','priceToBook'] if c in fundamentals_df.columns]
-    if not cols:
-        return pd.DataFrame()
-    rob = fundamentals_df[cols].apply(pd.to_numeric, errors='coerce')
-    med = rob.median(skipna=True)
-    mad = rob.apply(lambda x: median_abs_deviation(x.dropna(), scale='normal') if x.dropna().size>0 else 0.0)
-    robust_scores = (rob - med) / (mad.replace(0, np.nan) + 1e-9)
-    percentiles = robust_scores.rank(pct=True, axis=0) * 100
-    percentiles['ARFS_RobustFundamental'] = percentiles.mean(axis=1)
-    return percentiles[['ARFS_RobustFundamental']]
-
-def compute_MHRP(all_dfs: dict, fundamentals_df: pd.DataFrame):
-    for s, df in all_dfs.items():
-        if df is None or df.empty:
-            continue
-        df = df.copy()
-        returns = df['Daily_Return'].fillna(0)
-        if len(returns) < 10:
-            df['MHRP_Short'] = 0.0
-        else:
-            try:
-                model = AutoReg(returns, lags=MHRP_SHORT_LAGS, old_names=False).fit()
-                pred = model.predict(start=returns.index[0], end=returns.index[-1])
-                df['MHRP_Short'] = pred.fillna(0)
-            except Exception:
-                df['MHRP_Short'] = 0.0
-        if len(returns) >= 252:
-            annual = returns.tail(252).mean() * 252
-            df['MHRP_Long'] = annual
-        else:
-            df['MHRP_Long'] = returns.rolling(252, min_periods=1).mean() * 252
-        all_dfs[s] = df
-    betas = np.linspace(0,1,21)
-    best_beta = 0.5
-    best_sharpe = -np.inf
-    for beta in betas:
-        vals = []
-        for s, df in all_dfs.items():
-            if df is None or df.empty:
-                continue
-            short = df['MHRP_Short'].fillna(0)
-            longp = df['MHRP_Long'].fillna(0)
-            blended = beta * short + (1-beta) * longp
-            vals.extend(blended.values)
-        arr = np.array(vals)
-        if arr.std() == 0:
-            sharpe = 0
-        else:
-            sharpe = arr.mean() / arr.std()
-        if sharpe > best_sharpe:
-            best_sharpe = sharpe
-            best_beta = beta
-    for s, df in all_dfs.items():
-        if df is None or df.empty:
-            continue
-        df = df.copy()
-        df['MultiHorizon_ForecastBlend'] = best_beta
-        df['MHRP_ReturnForecast'] = best_beta * df['MHRP_Short'].fillna(0) + (1-best_beta) * df['MHRP_Long'].fillna(0)
-        all_dfs[s] = df
-    return all_dfs, best_beta
-
-# -------------------------
-# Backtest / Metrics
-# -------------------------
-
-def compute_backtest_metrics(equity_series: pd.Series) -> dict:
-    eq = equity_series.dropna()
-    if eq.empty:
-        return {'CAGR': np.nan, 'Sharpe': np.nan, 'MaxDrawdown': np.nan, 'TotalReturn': np.nan}
-    total_return = eq.iloc[-1] - 1.0
-    n_years = (eq.index[-1] - eq.index[0]).days / 365.0
-    cagr = (eq.iloc[-1]) ** (1.0 / n_years) - 1.0 if n_years > 0 else np.nan
-    daily_ret = eq.pct_change().fillna(0)
-    sharpe = np.sqrt(252) * daily_ret.mean() / (daily_ret.std() + 1e-9)
-    dd = eq.cummax() - eq
-    max_dd = (dd / eq.cummax()).max()
-    return {'CAGR': cagr, 'Sharpe': sharpe, 'MaxDrawdown': max_dd, 'TotalReturn': total_return}
-
-def backtest_by_signal(df: pd.DataFrame, signal_col: str = 'FinalScore', long_thresh: float = 0.25, short_thresh: float = -0.25, allow_short: bool = False):
-    df = df.copy()
-    if signal_col not in df.columns:
-        df['Position'] = 0
-    else:
-        if allow_short:
-            df['Position'] = np.where(df[signal_col] > long_thresh, 1, np.where(df[signal_col] < short_thresh, -1, 0))
-        else:
-            df['Position'] = np.where(df[signal_col] > long_thresh, 1, 0)
-    df['StrategyRet'] = df['Position'].shift(1) * df['Daily_Return']
-    df['Equity'] = (1 + df['StrategyRet'].fillna(0)).cumprod()
-    # Ensure proper datetime index for equity metrics without causing column conflicts
-    if 'Date' in df.columns:
-        try:
-            # Convert Date column to datetime and set as index, but preserve original Date column
-            date_index = pd.to_datetime(df['Date'])
-            df_indexed = df.copy()
-            df_indexed.index = date_index
-            metrics = compute_backtest_metrics(df_indexed['Equity'])
-        except Exception:
-            metrics = compute_backtest_metrics(df['Equity'])
-    else:
-        metrics = compute_backtest_metrics(df['Equity'])
-    return df, metrics
-
-def portfolio_backtest(all_dfs: dict, lwpc_df: pd.DataFrame, signal_col: str = 'FinalSignal'):
-    symbols = [s for s in all_dfs.keys() if all_dfs[s] is not None and not all_dfs[s].empty]
-    returns = {}
-    for s in symbols:
-        df = all_dfs[s]
-        tmp = df[['Date','Daily_Return']].copy()
-        tmp['Date'] = pd.to_datetime(tmp['Date'])
-        tmp = tmp.set_index('Date')['Daily_Return']
-        returns[s] = tmp
-    ret_df = pd.DataFrame(returns).sort_index().fillna(0.0)
-    weight_map = {}
-    if lwpc_df is not None and not lwpc_df.empty:
-        for _, r in lwpc_df.iterrows():
-            weight_map[r['Symbol']] = r['LWPC_Weight']
-    weights = np.array([weight_map.get(s, 1.0/len(symbols)) for s in symbols])
-    weights = weights / weights.sum() if weights.sum() != 0 else np.ones(len(symbols))/len(symbols)
-    port_ret = (ret_df.fillna(0.0) * weights).sum(axis=1)
-    port_equity = (1 + port_ret).cumprod()
-    metrics = compute_backtest_metrics(port_equity)
-    df_port = pd.DataFrame({'Date': port_equity.index, 'Portfolio_Equity': port_equity.values})
-    return df_port, metrics
-
-# -------------------------
-# Excel Exporter (with plots)
-# -------------------------
-
-class ExcelExporter:
-    def __init__(self, filename: str):
-        self.filename = filename
-        self.wb = openpyxl.Workbook()
-        if 'Sheet' in self.wb.sheetnames:
-            self.wb.remove(self.wb['Sheet'])
-        self.header_font = Font(bold=True, color="FFFFFF")
-        self.header_fill = PatternFill(start_color="2E86AB", end_color="2E86AB", fill_type="solid")
-        self.border = Border(left=Side(style='thin'), right=Side(style='thin'),
-                             top=Side(style='thin'), bottom=Side(style='thin'))
-        self.center = Alignment(horizontal='center', vertical='center')
-
-    def add_df(self, df: pd.DataFrame, sheet_name: str):
-        ws = self.wb.create_sheet(title=sheet_name[:31])
-        for r in dataframe_to_rows(df, index=False, header=True):
-            ws.append(r)
-        for cell in ws[1]:
-            try:
-                cell.font = self.header_font
-                cell.fill = self.header_fill
-                cell.alignment = self.center
-                cell.border = self.border
-            except Exception:
-                pass
-        for col in ws.columns:
-            max_len = 0
-            col_letter = None
-            for c in col:
-                try:
-                    if col_letter is None:
-                        col_letter = c.column_letter
-                    v = "" if c.value is None else str(c.value)
-                    if len(v) > max_len:
-                        max_len = len(v)
-                except Exception:
-                    pass
-            if col_letter:
-                ws.column_dimensions[col_letter].width = min(max_len + 2, 50)
-
-    def add_text(self, text: str, sheet_name: str = 'Novel_Algorithms'):
-        ws = self.wb.create_sheet(title=sheet_name[:31])
-        ws['A1'] = text
-        ws['A1'].alignment = Alignment(wrapText=True)
-        ws.column_dimensions['A'].width = 120
-
-    def add_image_to_sheet(self, image_bytes: bytes, sheet_name: str, anchor: str = "K2"):
-        try:
-            img = XLImage(BytesIO(image_bytes))
-            if sheet_name not in self.wb.sheetnames:
-                ws = self.wb.create_sheet(title=sheet_name[:31])
-            else:
-                ws = self.wb[sheet_name]
-            ws.add_image(img, anchor)
-        except Exception:
-            pass
-
-    def save(self):
-        self.wb.save(self.filename)
-        print(f"[+] Saved workbook: {self.filename}")
-        
-        # For Google Colab, enable file download
-        try:
-            from google.colab import files
-            files.download(self.filename)
-            print(f"[+] File download initiated for Google Colab")
-        except ImportError:
-            # Not in Colab, file saved locally
-            pass
-
-# -------------------------
-# Main flow
-# -------------------------
-
-def main():
-    print("=== Enhanced Portfolio Research Tool (All Algorithms + Novel Methods + Backtest + Plots) ===")
-    
-    # Google Colab friendly input - you can modify these defaults
-    try:
-        # Try to get user input
-        tickers_input = input("Tickers (comma-separated, e.g. AAPL,MSFT,GOOGL): ").strip()
-    except:
-        # Fallback for environments where input() doesn't work
-        tickers_input = "AAPL,MSFT,GOOGL"  # Default tickers
-        print(f"Using default tickers: {tickers_input}")
-    
-    if not tickers_input:
-        tickers_input = "AAPL,MSFT,GOOGL"  # Default fallback
-        print(f"No input provided, using defaults: {tickers_input}")
-    
-    symbols = [s.strip().upper() for s in tickers_input.split(",") if s.strip()]
-    
-    try:
-        start_date = input("Start date (YYYY-MM-DD): ").strip()
-    except:
-        start_date = "2023-01-01"  # Default start date
-        print(f"Using default start date: {start_date}")
-    
-    try:
-        end_date = input("End date (YYYY-MM-DD) inclusive: ").strip()
-    except:
-        end_date = "2024-01-01"  # Default end date
-        print(f"Using default end date: {end_date}")
-    
-    if not (validate_date(start_date) and validate_date(end_date)):
-        print("Invalid date format detected. Using defaults...")
-        start_date = "2023-01-01"
-        end_date = "2024-01-01"
-        
-    end_exclusive = (datetime.strptime(end_date, "%Y-%m-%d") + timedelta(days=1)).strftime("%Y-%m-%d")
-
-    print("[i] Fetching fundamentals (snapshot) via yfinance...")
-    fundamentals = fetch_fundamentals(symbols)
-
-    print("[i] Downloading price history and computing indicators...")
-    all_dfs = {}
-    for s in tqdm(symbols, desc="Downloading"):
-        try:
-            t = yf.Ticker(s)
-            hist = t.history(start=start_date, end=end_exclusive, auto_adjust=False)
-            if hist.empty:
-                print(f"[-] No data for {s} in that range.")
-                all_dfs[s] = pd.DataFrame()
-                continue
-            hist = hist[['Open','High','Low','Close','Volume','Adj Close']].reset_index()
-            hist['Date'] = pd.to_datetime(hist['Date']).dt.date
-            hist = hist.set_index('Date', drop=False)
-            hist = compute_indicators(hist)
-            hist = compute_regime_columns(hist)
-            hist = compute_AMSF(hist)
-            all_dfs[s] = hist
         except Exception as e:
-            print(f"[!] Error fetching {s}: {e}")
-            all_dfs[s] = pd.DataFrame()
+            print(f"Portfolio calculation error: {e}")
 
-    print("[i] Computing FTCS (Fundamental-Technical Consensus Score)...")
-    all_dfs = compute_FTCS(all_dfs, fundamentals)
+    def plot_portfolio_analysis(self) -> None:
+        """Plot portfolio analysis"""
+        if not self.portfolio_stats:
+            return
 
-    print("[i] Computing DPS (Dynamic Position Sizing)...")
-    for s in symbols:
-        if s not in all_dfs or all_dfs[s] is None or all_dfs[s].empty:
-            continue
-        all_dfs[s] = compute_DPS(all_dfs[s], capital=DPS_K)
-
-    print("[i] Running CASP (Granger causality) and adjusting AMSF...")
-    try:
-        all_dfs, leadership = compute_CASP(all_dfs)
-    except Exception as e:
-        print(f"[!] CASP error: {e}")
-        leadership = {}
-
-    print("[i] Applying FMDA (Fundamental Momentum Decay Adjustment) - snapshot demo")
-    fundamentals = compute_FMDA(fundamentals, gamma=FMDA_GAMMA)
-
-    print("[i] Computing VR-MACD (Volatility-Regime MACD)...")
-    for s in symbols:
-        if s not in all_dfs or all_dfs[s] is None or all_dfs[s].empty:
-            continue
-        all_dfs[s] = compute_VR_MACD(all_dfs[s])
-
-    print("[i] Computing LWPC (Liquidity-Weighted Portfolio Construction)...")
-    lwpc_df = compute_LWPC(all_dfs, fundamentals)
-
-    print("[i] Computing ARFS (Anomaly-Resilient Fundamental Scoring)...")
-    arfs_df = compute_ARFS(fundamentals)
-    if not arfs_df.empty:
-        fundamentals = fundamentals.join(arfs_df)
-
-    print("[i] Computing MHRP (Multi-Horizon Return Predictor)...")
-    all_dfs, best_beta = compute_MHRP(all_dfs, fundamentals)
-    print(f"[i] MHRP blend beta selected: {best_beta:.2f}")
-
-    # -------------------------
-    # NEW NOVEL ALGORITHMS
-    # -------------------------
-    
-    print("[i] Computing AHF-GNN (Adaptive Hierarchical Factor Graph Neural Network)...")
-    all_dfs = compute_AHF_GNN(all_dfs)
-    
-    print("[i] Computing CAAE (Causal Alpha Attribution Engine)...")
-    all_dfs = compute_CAAE(all_dfs, fundamentals)
-    
-    print("[i] Computing SPRINT-RL (Streaming Portfolio Rebalancing with Transaction Cost-Aware RL)...")
-    all_dfs = compute_SPRINT_RL(all_dfs)
-    
-    print("[i] Computing MRS-KF (Multi-Resolution Regime-Switching Kalman Filter)...")
-    all_dfs = compute_MRS_KF(all_dfs)
-    
-    print("[i] Computing DFAM (Decentralized Federated Alpha Mining)...")
-    all_dfs = compute_DFAM(all_dfs)
-
-    # -------------------------
-    # NEW MATHEMATICAL FORMULATIONS
-    # -------------------------
-    
-    print("[i] Computing Novel Mathematical Formulations...")
-    
-    for s in symbols:
-        df = all_dfs.get(s)
-        if df is None or df.empty:
-            continue
-        
-        print(f"[i] - {s}: Dynamic Information Ratio...")
-        df = compute_dynamic_information_ratio(df)
-        
-        print(f"[i] - {s}: Non-Ergodic Alpha Decay...")
-        df = compute_non_ergodic_alpha_decay(df)
-        
-        print(f"[i] - {s}: Liquidity-Adjusted Execution Cost...")
-        df = compute_liquidity_adjusted_execution_cost(df)
-        
-        print(f"[i] - {s}: Topological Persistence Score...")
-        df = compute_topological_persistence_score(df)
-        
-        all_dfs[s] = df
-    
-    print("[i] Computing Wasserstein Factor Orthogonalization...")
-    all_dfs = compute_wasserstein_factor_orthogonalization(all_dfs)
-
-    print("[i] Computing SignalConfidence_Entropy per row...")
-    for s in symbols:
-        df = all_dfs.get(s)
-        if df is None or df.empty:
-            continue
-        confidences = []
-        for _, r in df.iterrows():
-            base = np.array([r.get('AMSF_Score',0.0), r.get('Combined_Base_Signal',0.0), 1.0/(r.get('Volatility',1e-9)+1e-9)])
-            confidences.append(entropy_confidence(base))
-        df['SignalConfidence_Entropy'] = confidences
-        all_dfs[s] = df
-
-    # -------------------------
-    # Enhanced FinalScore combining all methods
-    # -------------------------
-    print("[i] Combining scores to produce Enhanced FinalScore / FinalSignal...")
-    for s in symbols:
-        df = all_dfs.get(s)
-        if df is None or df.empty:
-            continue
-        df = df.copy()
-        
-        # Original components
-        ftcs = df.get('FTCS_Score', 50.0) / 100.0
-        amsf = df.get('AMSF_Score', 0.0)
-        mhrp = df.get('MHRP_ReturnForecast', 0.0)
-        conf = df.get('SignalConfidence_Entropy', 0.5)
-        
-        # Novel algorithm components
-        ahf_gnn = df.get('AHF_GNN_Score', 0.0)
-        caae = df.get('CAAE_CausalAlpha', 0.0)
-        sprint = df.get('SPRINT_NetReturn', 0.0).fillna(0.0) * 100  # Scale up
-        mrs_kf = df.get('MRS_TotalSignal', 0.0)
-        dfam = df.get('DFAM_FederatedScore', 0.0)
-        
-        # Novel formulation components
-        dir_score = df.get('DIR_Score', 0.0).replace([np.inf, -np.inf], 0.0).fillna(0.0)
-        nead_decay = df.get('NEAD_DecayedAlpha', 0.0)
-        tps_robust = df.get('TPS_RobustnessScore', 0.5)
-        
-        # Enhanced combining formula with multiple layers
-        # Layer 1: Traditional signals
-        traditional_score = 0.4 * amsf + 0.3 * (ftcs * 2 - 1) + 0.3 * mhrp
-        
-        # Layer 2: Novel algorithms
-        novel_algo_score = 0.2 * ahf_gnn + 0.2 * caae + 0.2 * np.tanh(sprint) + 0.2 * np.tanh(mrs_kf) + 0.2 * dfam
-        
-        # Layer 3: Novel formulations
-        novel_form_score = 0.3 * np.tanh(dir_score) + 0.3 * np.tanh(nead_decay * 10) + 0.4 * (tps_robust * 2 - 1)
-        
-        # Final enhanced score
-        df['EnhancedFinalScore'] = (
-            0.5 * traditional_score +
-            0.3 * novel_algo_score +
-            0.2 * novel_form_score
-        ) * (0.5 + conf * 0.5)
-        
-        # Keep original final score for comparison
-        df['FinalScore'] = 0.5 * amsf + 0.3 * (ftcs * 2 - 1) + 0.2 * mhrp
-        df['FinalScore'] = df['FinalScore'] * (0.5 + conf * 0.5)
-        
-        df['FinalSignal'] = np.where(df['EnhancedFinalScore'] > 0.25, 1, np.where(df['EnhancedFinalScore'] < -0.25, -1, 0))
-        
-        all_dfs[s] = df
-
-    # -------------------------
-    # Per-symbol backtests & collect metrics
-    # -------------------------
-    print("[i] Running per-symbol backtests using EnhancedFinalScore...")
-    backtest_metrics = {}
-    for s in symbols:
-        df = all_dfs.get(s)
-        if df is None or df.empty:
-            continue
-        bt_df, metrics = backtest_by_signal(df, signal_col='EnhancedFinalScore', long_thresh=0.25, short_thresh=-0.25, allow_short=False)
-        all_dfs[s] = bt_df
-        backtest_metrics[s] = metrics
-
-    # -------------------------
-    # Portfolio backtest (LWPC weights)
-    # -------------------------
-    print("[i] Running portfolio backtest (LWPC weights)...")
-    port_df, port_metrics = portfolio_backtest(all_dfs, lwpc_df)
-
-    # -------------------------
-    # Build enhanced long-format DataFrame for Daily_Per_Symbol
-    # -------------------------
-    print("[i] Building Enhanced Daily_Per_Symbol (long) DataFrame for export...")
-    rows = []
-    
-    # Maps for snapshot columns
-    fmda_map = {s: 1.0 for s in symbols}
-    arfs_map = {}
-    if fundamentals is not None and 'ARFS_RobustFundamental' in fundamentals.columns:
-        for s in symbols:
-            try:
-                arfs_map[s] = float(fundamentals.loc[s]['ARFS_RobustFundamental']) if s in fundamentals.index else np.nan
-            except Exception:
-                arfs_map[s] = np.nan
-    lwpc_map = {}
-    if lwpc_df is not None:
-        for _, r in lwpc_df.iterrows():
-            lwpc_map[r['Symbol']] = float(r['LWPC_Weight'])
-    
-    for s in symbols:
-        df = all_dfs.get(s)
-        if df is None or df.empty:
-            continue
-        
-        # Create a clean copy and reset index properly
-        tmp = df.copy()
-        if 'Date' in tmp.columns:
-            date_col = tmp['Date']
-        else:
-            date_col = tmp.index
-            
-        tmp = tmp.reset_index(drop=True)
-        
-        for i, (_, r) in enumerate(tmp.iterrows()):
-            row = {'Date': date_col.iloc[i] if hasattr(date_col, 'iloc') else date_col[i], 'Symbol': s}
-            
-            # OHLCV & base
-            for col in ['Open','High','Low','Close','Adj Close','Volume','Daily_Return','Cumulative_Return','Volatility']:
-                row[col] = r.get(col, np.nan)
-            
-            # Original indicators & algorithms
-            original_cols = [
-                'SMA_10','SMA_50','EMA_12','EMA_26','RSI','MACD','MACD_Signal','MACD_Hist',
-                'BB_Upper','BB_Lower','BB_Position',
-                'AMSF_Score','AMSF_Signal',
-                'Adaptive_SignalWeight_MACD','Adaptive_SignalWeight_MA','Adaptive_SignalWeight_RSI','Adaptive_SignalWeight_BB',
-                'FTCS_Score','FTCS_Formula','SignalConfidence','SignalConfidence_Entropy',
-                'RABE_Regime','Hurst',
-                'DPS_PositionSize','Dynamic_PositionSize','Drawdown',
-                'CASP_Adjustment',
-                'Fundamental_DecayFactor',
-                'VR_MACD','VR_MACD_Signal','VR_EMA_Span',
-                'LWPC_Weight',
-                'ARFS_RobustFundamental',
-                'MHRP_ReturnForecast','MultiHorizon_ForecastBlend',
-                'FinalScore','FinalSignal','Equity'
-            ]
-            
-            # Novel algorithm columns
-            novel_algo_cols = [
-                'AHF_GNN_Score', 'AHF_Centrality', 'AHF_ClusterID',
-                'CAAE_CausalAlpha', 'CAAE_InstrumentStrength', 'CAAE_Attribution',
-                'SPRINT_Position', 'SPRINT_Action', 'SPRINT_ExecutionCost', 'SPRINT_NetReturn',
-                'MRS_Level1', 'MRS_Level2', 'MRS_Level3', 'MRS_Trend', 'MRS_TotalSignal', 'MRS_Uncertainty',
-                'DFAM_GlobalModel', 'DFAM_PrivacyNoise', 'DFAM_FederatedScore'
-            ]
-            
-            # Novel formulation columns  
-            novel_form_cols = [
-                'DIR_Alpha', 'DIR_ResidualVol', 'DIR_ConditionalVaR', 'DIR_VaRChange', 'DIR_Score',
-                'NEAD_MarketEntropy', 'NEAD_InitialAlpha', 'NEAD_DecayedAlpha', 'NEAD_DecayFactor',
-                'WFO_Factor1', 'WFO_Factor2', 'WFO_Factor3', 'WFO_Factor4', 'WFO_WassersteinScore', 'WFO_OrthogonalityScore',
-                'LACM_SpreadCost', 'LACM_ImpactElasticity', 'LACM_TradeSize', 'LACM_ExecutionRate', 'LACM_TotalCost',
-                'TPS_RawPersistence', 'TPS_NormalizedPersistence', 'TPS_RobustnessScore'
-            ]
-            
-            # Enhanced final score
-            enhanced_cols = ['EnhancedFinalScore']
-            
-            # Combine all columns
-            all_extra_cols = original_cols + novel_algo_cols + novel_form_cols + enhanced_cols
-            
-            for c in all_extra_cols:
-                val = r.get(c, np.nan)
-                # Handle series elements
-                try:
-                    if hasattr(val, '__len__') and not isinstance(val, (str, bytes)) and np.array(val).size == 1:
-                        val = float(np.array(val).item())
-                except Exception:
-                    pass
-                row[c] = val
-            
-            # Snapshot / cross-symbol fields
-            row['FMDA_FundamentalDecay'] = fmda_map.get(s, 1.0)
-            row['RobustFundamental_Ratio'] = arfs_map.get(s, np.nan)
-            row['LiquidityAdj_RiskWeight'] = lwpc_map.get(s, np.nan)
-            
-            rows.append(row)
-
-    if len(rows) == 0:
-        print("[!] No rows to export; exiting.")
-        sys.exit(1)
-
-    long_df = pd.DataFrame(rows)
-
-    # -------------------------
-    # Enhanced Summary per-symbol
-    # -------------------------
-    summary_rows = []
-    for s in long_df['Symbol'].unique():
-        sub = long_df[long_df['Symbol'] == s]
-        row = {'Symbol': s}
-        
-        summary_cols = ['FinalScore','FinalSignal','FTCS_Score','AMSF_Score','DPS_PositionSize','MHRP_ReturnForecast','LWPC_Weight','ARFS_RobustFundamental','Equity']
-        enhanced_summary_cols = ['EnhancedFinalScore','AHF_GNN_Score','CAAE_CausalAlpha','SPRINT_NetReturn','MRS_TotalSignal','DFAM_FederatedScore','DIR_Score','NEAD_DecayedAlpha','TPS_RobustnessScore']
-        
-        all_summary_cols = summary_cols + enhanced_summary_cols
-        
-        for c in all_summary_cols:
-            if c in sub.columns:
-                try:
-                    row[c + "_avg"] = sub[c].replace([np.inf, -np.inf], np.nan).mean()
-                except Exception:
-                    row[c + "_avg"] = np.nan
-            else:
-                row[c + "_avg"] = np.nan
-        summary_rows.append(row)
-    summary_df = pd.DataFrame(summary_rows)
-
-    # -------------------------
-    # Backtest summary DataFrame
-    # -------------------------
-    bt_rows = []
-    for s, metrics in backtest_metrics.items():
-        row = {'Symbol': s}
-        row.update(metrics)
-        bt_rows.append(row)
-    backtests_df = pd.DataFrame(bt_rows)
-
-    # -------------------------
-    # Export to Excel with enhanced plots
-    # -------------------------
-    timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-    out_fname = f"{OUTPUT_PREFIX}_{timestamp}.xlsx"
-    exporter = ExcelExporter(out_fname)
-
-    print("[i] Writing Enhanced Daily_Per_Symbol sheet...")
-    exporter.add_df(long_df, 'Enhanced_Daily_Per_Symbol')
-
-    print("[i] Writing per-symbol TS_ sheets with enhanced plots...")
-    for s in symbols:
-        df = all_dfs.get(s)
-        if df is None or df.empty:
-            continue
-        
-        # Create export dataframe without index conflicts
-        export_df = df.copy()
-        if 'Date' in export_df.columns and export_df.index.name == 'Date':
-            export_df = export_df.reset_index(drop=True)
-        elif 'Date' not in export_df.columns:
-            export_df = export_df.reset_index()
-        
-        exporter.add_df(export_df, f"TS_{s}")
-
-        # Enhanced equity curve plot comparing original vs enhanced scores
-        if 'Equity' in df.columns and df['Equity'].notna().any():
-            try:
-                plt.figure(figsize=(10,6))
-                if 'Date' in df.columns:
-                    x = pd.to_datetime(df['Date'])
-                else:
-                    x = pd.to_datetime(df.index)
-                
-                plt.subplot(2,1,1)
-                plt.plot(x, df['Equity'], label='Enhanced Strategy Equity', color='blue', linewidth=2)
-                plt.title(f"{s} - Enhanced Strategy Equity Curve")
-                plt.legend()
-                plt.grid(True, alpha=0.3)
-                
-                plt.subplot(2,1,2)
-                plt.plot(x, df.get('FinalScore', 0), label='Original FinalScore', alpha=0.7, color='gray')
-                plt.plot(x, df.get('EnhancedFinalScore', 0), label='Enhanced FinalScore', color='red')
-                plt.title(f"{s} - Score Comparison")
-                plt.legend()
-                plt.grid(True, alpha=0.3)
-                
-                plt.tight_layout()
-                buf = BytesIO()
-                plt.savefig(buf, format='png', dpi=100, bbox_inches='tight')
-                plt.close()
-                exporter.add_image_to_sheet(buf.getvalue(), f"TS_{s}", anchor="K2")
-            except Exception:
-                pass
-
-        # Novel algorithms performance plot
-        if any(col in df.columns for col in ['AHF_GNN_Score', 'CAAE_CausalAlpha', 'DIR_Score']):
-            try:
-                plt.figure(figsize=(10,8))
-                x = pd.to_datetime(df['Date']) if 'Date' in df.columns else pd.to_datetime(df.index)
-                
-                plt.subplot(3,1,1)
-                if 'AHF_GNN_Score' in df.columns:
-                    plt.plot(x, df['AHF_GNN_Score'], label='AHF-GNN Score', color='green')
-                if 'CAAE_CausalAlpha' in df.columns:
-                    plt.plot(x, df['CAAE_CausalAlpha'], label='CAAE Causal Alpha', color='orange')
-                plt.title(f"{s} - Novel Algorithms: AHF-GNN & CAAE")
-                plt.legend()
-                plt.grid(True, alpha=0.3)
-                
-                plt.subplot(3,1,2)
-                if 'SPRINT_NetReturn' in df.columns:
-                    plt.plot(x, df['SPRINT_NetReturn'].cumsum(), label='SPRINT Cumulative Net Return', color='purple')
-                if 'MRS_TotalSignal' in df.columns:
-                    plt.plot(x, df['MRS_TotalSignal'], label='MRS-KF Total Signal', color='brown')
-                plt.title(f"{s} - Novel Algorithms: SPRINT-RL & MRS-KF")
-                plt.legend()
-                plt.grid(True, alpha=0.3)
-                
-                plt.subplot(3,1,3)
-                if 'DIR_Score' in df.columns:
-                    plt.plot(x, df['DIR_Score'], label='Dynamic Information Ratio', color='red')
-                if 'TPS_RobustnessScore' in df.columns:
-                    plt.plot(x, df['TPS_RobustnessScore'], label='Topological Persistence Score', color='darkblue')
-                plt.title(f"{s} - Novel Formulations: DIR & TPS")
-                plt.legend()
-                plt.grid(True, alpha=0.3)
-                
-                plt.tight_layout()
-                buf = BytesIO()
-                plt.savefig(buf, format='png', dpi=100, bbox_inches='tight')
-                plt.close()
-                exporter.add_image_to_sheet(buf.getvalue(), f"TS_{s}", anchor="K25")
-            except Exception:
-                pass
-
-    print("[i] Writing Enhanced Summary sheet...")
-    exporter.add_df(summary_df, 'Enhanced_Summary')
-
-    print("[i] Writing Enhanced Backtests sheet...")
-    exporter.add_df(backtests_df, 'Enhanced_Backtests')
-
-    print("[i] Writing portfolio backtest & metrics...")
-    try:
-        exporter.add_df(port_df, 'Portfolio_Equity')
-        pm = pd.DataFrame([port_metrics], index=['Portfolio']).reset_index().rename(columns={'index':'Name'})
-        exporter.add_df(pm, 'Portfolio_Metrics')
-        
-        # Enhanced portfolio equity plot
         try:
-            plt.figure(figsize=(12,8))
-            x = pd.to_datetime(port_df['Date'])
-            
-            plt.subplot(2,1,1)
-            plt.plot(x, port_df['Portfolio_Equity'], label='Portfolio Equity', color='darkgreen', linewidth=2)
-            plt.title("Enhanced Portfolio Equity Curve (LWPC weights)")
-            plt.legend()
-            plt.grid(True, alpha=0.3)
-            
-            # Add performance metrics text
-            plt.subplot(2,1,2)
-            metrics_text = f"""Portfolio Performance Metrics:
-CAGR: {port_metrics.get('CAGR', 0):.2%}
-Sharpe Ratio: {port_metrics.get('Sharpe', 0):.2f}
-Max Drawdown: {port_metrics.get('MaxDrawdown', 0):.2%}
-Total Return: {port_metrics.get('TotalReturn', 0):.2%}
+            # Create subplots
+            fig = make_subplots(
+                rows=2, cols=2,
+                subplot_titles=(
+                    'Individual Stock Returns vs Risk',
+                    'Correlation Heatmap',
+                    'Equal Weight Allocation',
+                    'Risk-Based Weight Allocation'
+                ),
+                specs=[[{"type": "scatter"}, {"type": "heatmap"}],
+                       [{"type": "pie"}, {"type": "pie"}]]
+            )
 
-Novel Algorithms Employed:
-✓ AHF-GNN: Adaptive Hierarchical Factor Graph Neural Network
-✓ CAAE: Causal Alpha Attribution Engine  
-✓ SPRINT-RL: Transaction Cost-Aware Reinforcement Learning
-✓ MRS-KF: Multi-Resolution Regime-Switching Kalman Filter
-✓ DFAM: Decentralized Federated Alpha Mining
+            # 1. Risk-Return scatter
+            returns = list(self.portfolio_stats['individual_returns'].values())
+            volatilities = list(self.portfolio_stats['individual_volatility'].values())
 
-Novel Mathematical Formulations:
-✓ Dynamic Information Ratio with Endogenous Risk Scaling
-✓ Non-Ergodic Alpha Decay Function
-✓ Factor Orthogonalization via Wasserstein Projection
-✓ Real-Time Liquidity-Adjusted Execution Cost Metric
-✓ Topological Persistence Score for Alpha Robustness"""
-            
-            plt.text(0.05, 0.95, metrics_text, transform=plt.gca().transAxes, fontsize=10,
-                    verticalalignment='top', bbox=dict(boxstyle='round', facecolor='wheat', alpha=0.8))
-            plt.axis('off')
-            
-            plt.tight_layout()
-            buf = BytesIO()
-            plt.savefig(buf, format='png', dpi=100, bbox_inches='tight')
-            plt.close()
-            exporter.add_image_to_sheet(buf.getvalue(), 'Portfolio_Equity', anchor="K2")
-        except Exception:
-            pass
-    except Exception:
-        pass
+            fig.add_trace(go.Scatter(
+                x=volatilities, y=returns,
+                mode='markers+text',
+                text=self.symbols,
+                textposition="middle right",
+                marker=dict(size=10, color='blue'),
+                name='Stocks'
+            ), row=1, col=1)
 
-    print("[i] Writing Fundamentals, LWPC, ARFS, and CASP leadership...")
-    try:
-        if fundamentals is not None and not fundamentals.empty:
-            exporter.add_df(fundamentals.reset_index().rename(columns={'index':'Symbol'}), 'Fundamentals')
-    except Exception:
-        pass
-    try:
-        if lwpc_df is not None:
-            exporter.add_df(lwpc_df, 'LWPC_Weights')
-    except Exception:
-        pass
-    try:
-        if not arfs_df.empty:
-            exporter.add_df(arfs_df.reset_index().rename(columns={'index':'Symbol'}), 'ARFS_RobustScores')
-    except Exception:
-        pass
-    try:
-        if leadership:
-            leader_rows = []
-            for sym, leads in leadership.items():
-                leader_rows.append({"Symbol": sym, "Leads": ", ".join(leads)})
-            exporter.add_df(pd.DataFrame(leader_rows), 'CASP_Leadership')
-    except Exception:
-        pass
+            # 2. Correlation heatmap
+            corr_matrix = self.portfolio_stats['correlation_matrix']
+            fig.add_trace(go.Heatmap(
+                z=corr_matrix.values,
+                x=corr_matrix.columns,
+                y=corr_matrix.index,
+                colorscale='RdBu',
+                zmid=0
+            ), row=1, col=2)
 
-    # Add novel algorithms comparison sheet
-    try:
-        print("[i] Creating Novel Algorithms Performance Comparison...")
-        comparison_rows = []
-        for s in symbols:
-            df = all_dfs.get(s)
-            if df is None or df.empty:
+            # 3. Equal weight pie
+            equal_weights = self.portfolio_stats['equal_weight']['weights']
+            fig.add_trace(go.Pie(
+                labels=list(equal_weights.keys()),
+                values=[w*100 for w in equal_weights.values()],
+                name="Equal Weight"
+            ), row=2, col=1)
+
+            # 4. Risk-based weight pie
+            risk_weights = self.portfolio_stats['risk_weighted']['weights']
+            fig.add_trace(go.Pie(
+                labels=list(risk_weights.keys()),
+                values=[w*100 for w in risk_weights.values()],
+                name="Risk-Based"
+            ), row=2, col=2)
+
+            fig.update_layout(height=800, showlegend=False,
+                            title="Portfolio Analysis Dashboard")
+            fig.show()
+
+            # Print summary
+            print("\nPortfolio Analysis Summary:")
+            print("-" * 50)
+
+            equal_stats = self.portfolio_stats['equal_weight']
+            risk_stats = self.portfolio_stats['risk_weighted']
+
+            print(f"Equal Weight Portfolio:")
+            print(f"  • Expected Return: {equal_stats['return']:.2%}")
+            print(f"  • Volatility: {equal_stats['volatility']:.2%}")
+            print(f"  • Sharpe Ratio: {equal_stats['sharpe']:.2f}")
+
+            print(f"\nRisk-Based Portfolio:")
+            print(f"  • Expected Return: {risk_stats['return']:.2%}")
+            print(f"  • Volatility: {risk_stats['volatility']:.2%}")
+            print(f"  • Sharpe Ratio: {risk_stats['sharpe']:.2f}")
+
+            print(f"\nIndividual Stock Performance:")
+            for symbol in self.symbols:
+                ret = self.portfolio_stats['individual_returns'][symbol]
+                vol = self.portfolio_stats['individual_volatility'][symbol]
+                sharpe = self.portfolio_stats['individual_sharpe'][symbol]
+                print(f"  • {symbol}: {ret:.2%} return, {vol:.2%} volatility, {sharpe:.2f} Sharpe")
+
+        except Exception as e:
+            print(f"Portfolio plotting error: {e}")
+
+    def analyze_portfolio(self, period: str = '1y', start_date: Optional[str] = None,
+                         end_date: Optional[str] = None) -> bool:
+        """Complete portfolio analysis with flexible date options"""
+        print(f"Starting portfolio analysis")
+        print("=" * 60)
+
+        if self.fetch_portfolio_data(period=period, start_date=start_date, end_date=end_date):
+            self.calculate_portfolio_stats()
+            self.plot_portfolio_analysis()
+            print("=" * 60)
+            print("Portfolio analysis completed!")
+            return True
+        else:
+            print("Portfolio analysis failed!")
+            return False
+
+# Multimodal Analysis Functions
+class MultimodalAnalyzer:
+    """Handles multimodal data analysis including GDELT and YouTube data"""
+
+    def __init__(self, youtube_api_key: str = ""):
+        # Use hardcoded API key if no key is provided
+        self.youtube_api_key = youtube_api_key or YOUTUBE_API_KEY
+        if not self.youtube_api_key or self.youtube_api_key == "YOUR_YOUTUBE_API_KEY_HERE":
+            print("Warning: YouTube API key not properly configured. YouTube functionality will be limited.")
+
+    def download_gdelt_csv(self) -> Optional[pd.DataFrame]:
+        """Download latest GDELT data"""
+        try:
+            print("Downloading GDELT data...")
+            GDELT_URL = 'http://data.gdeltproject.org/gdeltv2/lastupdate.txt'
+            response = requests.get(GDELT_URL, timeout=30)
+            last_update = response.text.split()[-1]
+            gdelt_csv_url = f'http://data.gdeltproject.org/gdeltv2/{last_update}'
+            csv_response = requests.get(gdelt_csv_url, timeout=60)
+            data = StringIO(csv_response.text)
+            df = pd.read_csv(data, sep='\t', header=None, low_memory=False)
+            print(f"Downloaded GDELT data with {len(df)} rows")
+            return df
+        except Exception as e:
+            print(f"Error downloading GDELT data: {e}")
+            return None
+
+    def get_video_ids(self, channel_id: str, max_results: int = 3) -> List[str]:
+        """Get video IDs from YouTube channel"""
+        if not GOOGLE_API_AVAILABLE or not self.youtube_api_key or self.youtube_api_key == "YOUR_YOUTUBE_API_KEY_HERE":
+            print("YouTube API not available or API key not properly configured")
+            return []
+
+        try:
+            youtube = build('youtube', 'v3', developerKey=self.youtube_api_key)
+            request = youtube.search().list(
+                part="id",
+                channelId=channel_id,
+                maxResults=max_results,
+                order="date",
+                type="video"
+            )
+            response = request.execute()
+            video_ids = [item['id']['videoId'] for item in response['items']]
+            print(f"Found {len(video_ids)} videos")
+            return video_ids
+        except Exception as e:
+            print(f"Error getting video IDs: {e}")
+            return []
+
+    def download_audio(self, video_url: str, output_path: str = "audio.mp3") -> Optional[str]:
+        """Download audio from YouTube video"""
+        if not YT_DLP_AVAILABLE:
+            print("yt-dlp not available for audio download")
+            return None
+
+        try:
+            ydl_opts = {
+                'format': 'bestaudio/best',
+                'outtmpl': output_path,
+                'quiet': True
+            }
+            with yt_dlp.YoutubeDL(ydl_opts) as ydl:
+                ydl.download([video_url])
+            return output_path
+        except Exception as e:
+            print(f"Error downloading audio: {e}")
+            return None
+
+    def transcribe_audio(self, audio_file: str) -> Optional[str]:
+        """Transcribe audio file using Whisper"""
+        if not WHISPER_AVAILABLE:
+            print("Whisper not available for transcription")
+            return None
+
+        try:
+            model = whisper.load_model("base")
+            result = model.transcribe(audio_file)
+            transcript = result['text']
+            print("Audio transcribed successfully")
+            return transcript
+        except Exception as e:
+            print(f"Error transcribing audio: {e}")
+            return None
+
+    def fetch_youtube_transcripts(self, channel_id: str, max_videos: int = 3) -> pd.DataFrame:
+        """Fetch and transcribe YouTube videos from a channel"""
+        print(f"Fetching YouTube transcripts for channel: {channel_id}")
+        transcripts = []
+        video_ids = self.get_video_ids(channel_id, max_results=max_videos)
+
+        for vid_id in video_ids:
+            video_url = f"https://www.youtube.com/watch?v={vid_id}"
+            audio_file = f"audio_{vid_id}.mp3"
+
+            try:
+                # Download audio
+                downloaded_file = self.download_audio(video_url, audio_file)
+                if downloaded_file:
+                    # Transcribe audio
+                    transcript = self.transcribe_audio(downloaded_file)
+                    if transcript:
+                        transcripts.append({
+                            'video_id': vid_id,
+                            'video_url': video_url,
+                            'transcript': transcript
+                        })
+
+                # Clean up audio file
+                if os.path.exists(audio_file):
+                    os.remove(audio_file)
+
+            except Exception as e:
+                print(f"Error processing video {vid_id}: {e}")
                 continue
-            
-            row = {'Symbol': s}
-            
-            # Original vs Enhanced performance
-            if 'Equity' in df.columns:
-                original_return = df.get('FinalScore', pd.Series(0, index=df.index)).iloc[-1] if 'FinalScore' in df.columns else 0
-                enhanced_return = df.get('EnhancedFinalScore', pd.Series(0, index=df.index)).iloc[-1] if 'EnhancedFinalScore' in df.columns else 0
-                row['Original_FinalScore_Latest'] = original_return
-                row['Enhanced_FinalScore_Latest'] = enhanced_return
-                row['Score_Improvement'] = enhanced_return - original_return
-            
-            # Novel algorithm contributions
-            for algo_col in ['AHF_GNN_Score', 'CAAE_CausalAlpha', 'SPRINT_NetReturn', 'MRS_TotalSignal', 'DFAM_FederatedScore']:
-                if algo_col in df.columns:
-                    row[f'{algo_col}_Latest'] = df[algo_col].iloc[-1]
-                    row[f'{algo_col}_Mean'] = df[algo_col].mean()
-                    row[f'{algo_col}_Std'] = df[algo_col].std()
-            
-            # Novel formulation contributions  
-            for form_col in ['DIR_Score', 'NEAD_DecayedAlpha', 'TPS_RobustnessScore']:
-                if form_col in df.columns:
-                    row[f'{form_col}_Latest'] = df[form_col].iloc[-1]
-                    row[f'{form_col}_Mean'] = df[form_col].mean()
-            
-            comparison_rows.append(row)
-        
-        if comparison_rows:
-            comparison_df = pd.DataFrame(comparison_rows)
-            exporter.add_df(comparison_df, 'Novel_Algorithms_Comparison')
-    except Exception:
-        pass
 
-    exporter.add_text(NOVEL_ALGORITHMS_TEXT, sheet_name='Novel_Algorithms_Info')
+        print(f"Successfully transcribed {len(transcripts)} videos")
+        return pd.DataFrame(transcripts)
 
-    exporter.save()
+    def run_multimodal_analysis(self, stock_channel_id: str, output_dir: str = ".") -> Dict[str, Any]:
+        """Run complete multimodal analysis"""
+        results = {}
 
-    print("[✓] Enhanced analysis complete!")
-    print(f"File saved: {out_fname}")
-    print("\n=== NOVEL RESEARCH CONTRIBUTIONS SUMMARY ===")
-    print("✓ 5 Novel Algorithms Implemented:")
-    print("  1. AHF-GNN: Adaptive Hierarchical Factor Graph Neural Network")
-    print("  2. CAAE: Causal Alpha Attribution Engine")
-    print("  3. SPRINT-RL: Streaming Portfolio Rebalancing with Transaction Cost-Aware RL")
-    print("  4. MRS-KF: Multi-Resolution Regime-Switching Kalman Filter")
-    print("  5. DFAM: Decentralized Federated Alpha Mining")
-    print("\n✓ 5 Novel Mathematical Formulations:")
-    print("  1. Dynamic Information Ratio with Endogenous Risk Scaling")
-    print("  2. Non-Ergodic Alpha Decay Function")
-    print("  3. Factor Orthogonalization via Wasserstein Projection")
-    print("  4. Real-Time Liquidity-Adjusted Execution Cost Metric")
-    print("  5. Topological Persistence Score for Alpha Robustness")
-    print(f"\n📊 Enhanced Excel contains {len(long_df.columns)} columns including all novel research methods")
-    print("📈 Each method addresses core quant finance pillars: Factor Modeling, Risk-Adjusted Alpha, Scalability & Execution, Real-Time Data Handling")
-    print("\nThis represents cutting-edge quantitative finance research suitable for hedge funds, prop trading, and fintech companies.")
+        # Download GDELT data
+        gdelt_df = self.download_gdelt_csv()
+        if gdelt_df is not None:
+            gdelt_path = os.path.join(output_dir, "gdelt_data.csv")
+            gdelt_df.to_csv(gdelt_path, index=False)
+            results['gdelt_data'] = gdelt_path
+            print(f"GDELT data saved to {gdelt_path}")
 
+        # Fetch YouTube transcripts
+        transcripts_df = self.fetch_youtube_transcripts(stock_channel_id, max_videos=3)
+        if not transcripts_df.empty:
+            transcripts_path = os.path.join(output_dir, "youtube_transcripts.csv")
+            transcripts_df.to_csv(transcripts_path, index=False)
+            results['youtube_transcripts'] = transcripts_path
+            print(f"YouTube transcripts saved to {transcripts_path}")
+
+        return results
+
+# Date selection utility functions
+def get_date_presets() -> Dict[str, Dict[str, Any]]:
+    """Get common date presets for easy selection"""
+    today = datetime.now()
+    presets = {
+        '1_week': {'period': '5d', 'description': 'Last 1 week'},
+        '1_month': {'period': '1mo', 'description': 'Last 1 month'},
+        '3_months': {'period': '3mo', 'description': 'Last 3 months'},
+        '6_months': {'period': '6mo', 'description': 'Last 6 months'},
+        '1_year': {'period': '1y', 'description': 'Last 1 year'},
+        '2_years': {'period': '2y', 'description': 'Last 2 years'},
+        '5_years': {'period': '5y', 'description': 'Last 5 years'},
+        '10_years': {'period': '10y', 'description': 'Last 10 years'},
+        'max': {'period': 'max', 'description': 'All available data'},
+
+        # Specific year ranges
+        'ytd': {
+            'start_date': f'{today.year}-01-01',
+            'description': f'Year to date ({today.year})'
+        },
+        'last_year': {
+            'start_date': f'{today.year-1}-01-01',
+            'end_date': f'{today.year-1}-12-31',
+            'description': f'Full year {today.year-1}'
+        },
+        'covid_period': {
+            'start_date': '2020-01-01',
+            'end_date': '2022-12-31',
+            'description': 'COVID period (2020-2022)'
+        },
+        'pre_covid': {
+            'start_date': '2018-01-01',
+            'end_date': '2019-12-31',
+            'description': 'Pre-COVID (2018-2019)'
+        },
+        'post_covid': {
+            'start_date': '2023-01-01',
+            'description': 'Post-COVID recovery (2023-present)'
+        }
+    }
+    return presets
+
+def display_date_options() -> None:
+    """Display available date preset options"""
+    presets = get_date_presets()
+
+    print("Available Date Presets:")
+    print("=" * 50)
+
+    for key, value in presets.items():
+        print(f"'{key}': {value['description']}")
+
+    print("\nUsage Examples:")
+    print("# Use preset with period")
+    print("analyzer = FinancialAnalyzer('AAPL')")
+    print("analyzer.run_complete_analysis(period='1y')")
+    print("\n# Custom date range")
+    print("analyzer.run_complete_analysis(start_date='2020-01-01', end_date='2023-12-31')")
+    print("\n# From specific date to present")
+    print("analyzer.run_complete_analysis(start_date='2022-01-01')")
+
+def run_analysis_with_preset(symbol: str, preset_key: str) -> bool:
+    """Run analysis with a date preset"""
+    presets = get_date_presets()
+
+    if preset_key not in presets:
+        print(f"Unknown preset: {preset_key}")
+        print("Available presets:", list(presets.keys()))
+        return False
+
+    preset = presets[preset_key]
+    print(f"Using preset: {preset['description']}")
+
+    analyzer = FinancialAnalyzer(symbol)
+
+    # Extract parameters
+    period = preset.get('period')
+    start_date = preset.get('start_date')
+    end_date = preset.get('end_date')
+
+    return analyzer.run_complete_analysis(period=period, start_date=start_date, end_date=end_date)
+
+def run_portfolio_analysis_with_preset(symbols: List[str], preset_key: str) -> bool:
+    """Run portfolio analysis with a date preset"""
+    presets = get_date_presets()
+
+    if preset_key not in presets:
+        print(f"Unknown preset: {preset_key}")
+        print("Available presets:", list(presets.keys()))
+        return False
+
+    preset = presets[preset_key]
+    print(f"Using preset: {preset['description']}")
+
+    portfolio = PortfolioAnalyzer(symbols)
+
+    # Extract parameters
+    period = preset.get('period')
+    start_date = preset.get('start_date')
+    end_date = preset.get('end_date')
+
+    return portfolio.analyze_portfolio(period=period, start_date=start_date, end_date=end_date)
+
+# Interactive analysis functions
+def interactive_single_stock_analysis() -> None:
+    """Interactive function for single stock analysis"""
+    print("Interactive Single Stock Analysis")
+    print("=" * 40)
+
+    # Get stock symbol
+    symbol = input("Enter stock symbol (e.g., AAPL): ").strip().upper()
+    if not symbol:
+        symbol = "AAPL"
+        print(f"Using default: {symbol}")
+
+    # Display date options
+    print("\nDate Selection Options:")
+    print("1. Use preset (recommended)")
+    print("2. Custom date range (YYYY-MM-DD format)")
+    print("3. From specific date to present")
+    print("4. Use period (e.g., 1y, 6mo, 2y)")
+
+    choice = input("\nSelect option (1/2/3/4): ").strip()
+
+    analyzer = FinancialAnalyzer(symbol)
+
+    if choice == '1':
+        display_date_options()
+        preset = input("\nEnter preset key (e.g., '1_year', 'covid_period'): ").strip()
+        run_analysis_with_preset(symbol, preset)
+
+    elif choice == '2':
+        start_date = input("Enter start date (YYYY-MM-DD): ").strip()
+        end_date = input("Enter end date (YYYY-MM-DD): ").strip()
+        analyzer.run_complete_analysis(start_date=start_date, end_date=end_date)
+
+    elif choice == '3':
+        start_date = input("Enter start date (YYYY-MM-DD): ").strip()
+        analyzer.run_complete_analysis(start_date=start_date)
+
+    elif choice == '4':
+        period = input("Enter period (e.g., 1y, 6mo, 2y, max): ").strip()
+        analyzer.run_complete_analysis(period=period)
+
+    else:
+        print("Using default: 1 year period")
+        analyzer.run_complete_analysis(period='1y')
+
+def interactive_portfolio_analysis() -> None:
+    """Interactive function for portfolio analysis"""
+    print("Interactive Portfolio Analysis")
+    print("=" * 40)
+
+    # Get stock symbols
+    symbols_input = input("Enter stock symbols separated by commas (e.g., AAPL,MSFT,GOOGL): ").strip().upper()
+    if not symbols_input:
+        symbols = ["AAPL", "MSFT", "GOOGL", "TSLA"]
+        print(f"Using default portfolio: {', '.join(symbols)}")
+    else:
+        symbols = [s.strip() for s in symbols_input.split(',')]
+
+    # Display date options
+    print("\nDate Selection Options:")
+    print("1. Use preset (recommended)")
+    print("2. Custom date range (YYYY-MM-DD format)")
+    print("3. From specific date to present")
+    print("4. Use period (e.g., 1y, 6mo, 2y)")
+
+    choice = input("\nSelect option (1/2/3/4): ").strip()
+
+    portfolio = PortfolioAnalyzer(symbols)
+
+    if choice == '1':
+        display_date_options()
+        preset = input("\nEnter preset key (e.g., '1_year', 'covid_period'): ").strip()
+        run_portfolio_analysis_with_preset(symbols, preset)
+
+    elif choice == '2':
+        start_date = input("Enter start date (YYYY-MM-DD): ").strip()
+        end_date = input("Enter end date (YYYY-MM-DD): ").strip()
+        portfolio.analyze_portfolio(start_date=start_date, end_date=end_date)
+
+    elif choice == '3':
+        start_date = input("Enter start date (YYYY-MM-DD): ").strip()
+        portfolio.analyze_portfolio(start_date=start_date)
+
+    elif choice == '4':
+        period = input("Enter period (e.g., 1y, 6mo, 2y, max): ").strip()
+        portfolio.analyze_portfolio(period=period)
+
+    else:
+        print("Using default: 1 year period")
+        portfolio.analyze_portfolio(period='1y')
+
+def interactive_multimodal_analysis() -> None:
+    """Interactive function for multimodal analysis"""
+    print("Interactive Multimodal Analysis")
+    print("=" * 40)
+
+    if not (GOOGLE_API_AVAILABLE and YT_DLP_AVAILABLE and WHISPER_AVAILABLE):
+        print("Warning: Some required libraries are not available.")
+        print(f"Google API: {'Available' if GOOGLE_API_AVAILABLE else 'Not Available'}")
+        print(f"yt-dlp: {'Available' if YT_DLP_AVAILABLE else 'Not Available'}")
+        print(f"Whisper: {'Available' if WHISPER_AVAILABLE else 'Not Available'}")
+        print("\nYou may proceed, but some features will be disabled.")
+
+    # Check if API key is configured
+    if YOUTUBE_API_KEY == "YOUR_YOUTUBE_API_KEY_HERE":
+        print("Warning: YouTube API key is not configured in the hardcoded section.")
+        api_key = input("Enter YouTube API key (or press Enter to use hardcoded key): ").strip()
+    else:
+        print("Using hardcoded YouTube API key.")
+        api_key = ""
+
+    # Get channel ID
+    channel_id = input("Enter YouTube channel ID for financial content: ").strip()
+    if not channel_id:
+        print("No channel ID provided. Skipping YouTube analysis.")
+        return
+
+    # Get output directory
+    output_dir = input("Enter output directory (default: current directory): ").strip()
+    if not output_dir:
+        output_dir = "."
+
+    # Run analysis
+    analyzer = MultimodalAnalyzer(api_key)
+    results = analyzer.run_multimodal_analysis(channel_id, output_dir)
+
+    print("\nMultimodal Analysis Results:")
+    for key, value in results.items():
+        print(f"  {key}: {value}")
+
+def main_demo() -> None:
+    """Main demonstration function"""
+    print("Enhanced Financial Analysis Tool - Demo")
+    print("=" * 60)
+
+    # Display available date options
+    display_date_options()
+
+    print("\n" + "=" * 60)
+    print("Running Demo Analyses...")
+
+    # Demo 1: Single stock analysis with preset
+    print("\nDemo 1: AAPL analysis for last 1 year")
+    run_analysis_with_preset("AAPL", "1_year")
+
+    # Demo 2: Portfolio analysis with preset
+    print("\nDemo 2: Tech portfolio analysis for COVID period")
+    tech_portfolio = ["AAPL", "MSFT", "GOOGL", "TSLA"]
+    run_portfolio_analysis_with_preset(tech_portfolio, "covid_period")
+
+    print("\nDemo Complete!")
+
+def main_menu() -> None:
+    """Main menu for interactive use"""
+    print("Enhanced Financial Analysis Tool")
+    print("=" * 50)
+
+    while True:
+        print("\nMain Menu:")
+        print("1. Single Stock Analysis")
+        print("2. Portfolio Analysis")
+        print("3. Multimodal Analysis (GDELT + YouTube)")
+        print("4. Show Date Presets")
+        print("5. Run Demo")
+        print("6. Exit")
+
+        choice = input("\nSelect option (1-6): ").strip()
+
+        if choice == '1':
+            interactive_single_stock_analysis()
+        elif choice == '2':
+            interactive_portfolio_analysis()
+        elif choice == '3':
+            interactive_multimodal_analysis()
+        elif choice == '4':
+            display_date_options()
+        elif choice == '5':
+            main_demo()
+        elif choice == '6':
+            print("Thank you for using the Financial Analysis Tool!")
+            break
+        else:
+            print("Invalid choice. Please select 1-6.")
+
+# Quick start examples
+def quick_examples() -> None:
+    """Quick examples for immediate use"""
+    print("Quick Start Examples")
+    print("=" * 40)
+
+    print("1. Single Stock Analysis:")
+    print("   analyzer = FinancialAnalyzer('AAPL')")
+    print("   analyzer.run_complete_analysis(period='1y')")
+
+    print("\n2. Custom Date Range:")
+    print("   analyzer.run_complete_analysis(start_date='2020-01-01', end_date='2022-12-31')")
+
+    print("\n3. Portfolio Analysis:")
+    print("   portfolio = PortfolioAnalyzer(['AAPL', 'MSFT', 'GOOGL'])")
+    print("   portfolio.analyze_portfolio(period='1y')")
+
+    print("\n4. Using Presets:")
+    print("   run_analysis_with_preset('TSLA', 'covid_period')")
+    print("   run_portfolio_analysis_with_preset(['AAPL', 'MSFT'], 'ytd')")
+
+    print("\n5. Multimodal Analysis:")
+    print("   analyzer = MultimodalAnalyzer()  # Uses hardcoded API key")
+    print("   analyzer.run_multimodal_analysis('CHANNEL_ID')")
+
+# Legacy compatibility functions (simplified versions from the original duplicate code)
+def download_gdelt_csv() -> Optional[pd.DataFrame]:
+    """Legacy function - use MultimodalAnalyzer.download_gdelt_csv() instead"""
+    analyzer = MultimodalAnalyzer()
+    return analyzer.download_gdelt_csv()
+
+def run_multimodal_analysis(youtube_api_key: str, stock_channel_id: str) -> Dict[str, Any]:
+    """Legacy function - use MultimodalAnalyzer.run_multimodal_analysis() instead"""
+    analyzer = MultimodalAnalyzer(youtube_api_key)
+    return analyzer.run_multimodal_analysis(stock_channel_id)
+
+# API Key Configuration Helper
+def configure_api_keys():
+    """Helper function to display API key configuration instructions"""
+    print("API Key Configuration Instructions")
+    print("=" * 50)
+    print("To use the multimodal features, you need to configure your API keys in the code.")
+    print("\nRequired API Keys:")
+    print("1. YouTube Data API v3 Key")
+    print("   - Go to: https://console.cloud.google.com/")
+    print("   - Enable YouTube Data API v3")
+    print("   - Create credentials (API Key)")
+    print("   - Replace 'YOUR_YOUTUBE_API_KEY_HERE' with your actual key")
+    print("\nOptional API Keys (for future enhancements):")
+    print("- Alpha Vantage API Key")
+    print("- News API Key")
+    print("- Financial Modeling Prep API Key")
+    print("\nExample configuration:")
+    print('YOUTUBE_API_KEY = "AIzaSyA1B2c3D4e5F6g7H8i9J0k1L2m3N4o5P6q7"')
+
+    # Display current configuration status
+    print(f"\nCurrent YouTube API Key Status:")
+    if YOUTUBE_API_KEY == "YOUR_YOUTUBE_API_KEY_HERE":
+        print("❌ Not configured - please add your API key")
+    elif YOUTUBE_API_KEY:
+        print(f"✅ Configured - Key starts with: {YOUTUBE_API_KEY[:10]}...")
+    else:
+        print("❌ Empty - please add your API key")
+
+# Example usage and main entry point
 if __name__ == "__main__":
-    main()
+    print("Enhanced Financial Analysis Tool - With Hardcoded API Keys")
+    print("=" * 60)
+
+    # Display API key configuration status
+    configure_api_keys()
+    print("\n" + "=" * 60)
+
+    # Uncomment one of the following to run:
+
+    # 1. Run interactive menu
+    main_menu()
+
+    # 2. Run quick demo
+    # main_demo()
+
+    # 3. Show quick examples
+    # quick_examples()
+
+    # 4. Run specific analysis
+    # analyzer = FinancialAnalyzer("AAPL")
+    # analyzer.run_complete_analysis(period='1y')
+
+    # 5. Run multimodal analysis (uses hardcoded API key)
+    # multimodal = MultimodalAnalyzer()
+    # results = multimodal.run_multimodal_analysis("YOUR_CHANNEL_ID")
+    # print("Multimodal results:", results)
